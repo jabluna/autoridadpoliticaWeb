@@ -370,7 +370,7 @@ export default function PlanesPage() {
             <button type="button" onClick={() => { clearForm(); setError(""); setMessage(""); setModalOpen(true); }} className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700">+ Crear nuevo plan</button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {plans.map((p, i) => {
               const styles = [
                 "from-sky-500 to-blue-600",
@@ -384,16 +384,16 @@ export default function PlanesPage() {
               return (
                 <article
                   key={p.id}
-                  className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                  className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
                 >
                   <div
-                    className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${styles[i % styles.length]}`}
+                    className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${styles[i % styles.length]}`}
                   />
 
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{p.nombre}</p>
-                      <p className="mt-3 text-3xl font-semibold tracking-tight">
+                      <p className="mt-1 text-2xl font-semibold tracking-tight">
                         {p.meses === 0 ? "Free" : p.meses}
                       </p>
                       <p className="text-xs text-slate-400">
@@ -412,10 +412,10 @@ export default function PlanesPage() {
                     </span>
                   </div>
 
-                  <div className={`mt-4 inline-flex w-fit rounded-xl px-3 py-2 text-xs font-semibold ${p.meses === 0 ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
+                  <div className={`mt-2 inline-flex w-fit rounded-lg px-2 py-1 text-[11px] font-medium ${p.meses === 0 ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
                     {p.meses === 0 ? "Red limitada a 3 niveles" : "Red sin límite de niveles"}
                   </div>
-                  <div className="mt-5 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 text-slate-900">
+                  <div className="mt-3 border-t border-slate-100 pt-3 text-slate-900">
                     <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-blue-500">
                       Precio final
                     </p>
@@ -426,7 +426,7 @@ export default function PlanesPage() {
                           const min = Math.min(...finals);
                           const max = Math.max(...finals);
                           return (
-                            <p className="mt-1 text-xl font-semibold tracking-tight">
+                            <p className="mt-1 text-lg font-semibold tracking-tight">
                               {min === max ? money(min) : `${money(min)} – ${money(max)}`}
                             </p>
                           );
@@ -440,21 +440,21 @@ export default function PlanesPage() {
                     )}
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap gap-1">
                     {enabled.map(price => (
-                      <span key={price.id} className="rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">
+                      <span key={price.id} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                         {price.nombre}
                       </span>
                     ))}
                   </div>
 
                   {(p.descuento || 0) > 0 && (
-                    <p className="mt-3 text-xs font-semibold text-emerald-600">
+                    <p className="mt-2 text-xs font-semibold text-emerald-600">
                       {p.descuento}% de descuento aplicado al precio final
                     </p>
                   )}
 
-                  <div className="mt-auto flex gap-2 pt-6">
+                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                     <button
                       onClick={() => editPlan(p)}
                       className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
@@ -476,13 +476,13 @@ export default function PlanesPage() {
 
         {modalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) { setModalOpen(false); clearForm(); } }}>
-          <section role="dialog" aria-modal="true" aria-label={editing ? "Editar plan" : "Crear nuevo plan"} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7">
+          <section role="dialog" aria-modal="true" aria-label={editing ? "Editar plan" : "Crear nuevo plan"} className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7">
             <div className="mb-4 flex justify-end"><button type="button" disabled={saving} onClick={() => { setModalOpen(false); clearForm(); }} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200" aria-label="Cerrar modal">✕ Cerrar</button></div>
-            <div className="mb-5">
+            <div className="mb-4">
               <span className="rounded-full bg-blue-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-blue-600">
                 {editing ? "Edición" : "Nuevo"}
               </span>
-              <h2 className="mt-3 text-lg font-semibold text-slate-950">
+              <h2 className="mt-2 text-xl font-semibold text-slate-950">
                 {editing ? `Editar ${editing.nombre}` : "Crear nuevo plan"}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
@@ -490,20 +490,21 @@ export default function PlanesPage() {
               </p>
             </div>
 
-            <form onSubmit={savePlan} className="space-y-4">
+            <form onSubmit={savePlan} className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
                   Nombre del plan
                 </label>
                 <input
                   value={form.nombre}
                   onChange={(e) => setForm((v) => ({ ...v, nombre: e.target.value }))}
                   placeholder="Ej. Trimestral"
-                  className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm outline-none focus:border-blue-400"
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <div className="contents">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
                     Duración en meses
@@ -515,7 +516,7 @@ export default function PlanesPage() {
                     value={form.meses}
                     onChange={(e) => setForm((v) => ({ ...v, meses: e.target.value }))}
                     placeholder="Ej. 3"
-                    className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm outline-none focus:border-blue-400"
                   />
                 </div>
 
@@ -530,21 +531,22 @@ export default function PlanesPage() {
                     step="1"
                     value={form.descuento}
                     onChange={(e) => setForm((v) => ({ ...v, descuento: e.target.value }))}
-                    className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm outline-none focus:border-blue-400"
                   />
                 </div>
               </div>
+              </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
                   Descripción
                 </label>
                 <textarea
                   value={form.descripcion}
                   onChange={(e) => setForm((v) => ({ ...v, descripcion: e.target.value }))}
-                  rows={3}
+                  rows={2}
                   placeholder="Descripción opcional..."
-                  className="w-full resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-blue-400"
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50/50 p-3 text-sm outline-none focus:border-blue-400"
                 />
               </div>
 
@@ -719,22 +721,16 @@ export default function PlanesPage() {
                 </div>
               )}
 
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-4">
+              <button type="button" disabled={saving} onClick={() => { setModalOpen(false); clearForm(); }} className="h-10 rounded-lg border border-slate-200 px-5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
               <button
                 disabled={saving}
-                className="h-12 w-full rounded-xl bg-[#1464d2] text-sm font-semibold text-white hover:bg-[#0f54b5] disabled:opacity-50"
+                className="h-10 rounded-lg bg-blue-600 px-6 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? "Guardando..." : editing ? "Guardar cambios" : "Crear plan"}
               </button>
 
-              {editing && (
-                <button
-                  type="button"
-                  onClick={() => { clearForm(); setModalOpen(false); }}
-                  className="h-11 w-full rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  Cancelar edición
-                </button>
-              )}
+              </div>
             </form>
           </section>
           </div>
