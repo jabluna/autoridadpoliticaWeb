@@ -33,6 +33,27 @@ export default function NuevoClientePage() {
   return <Suspense fallback={<main className="min-h-screen p-6">Cargando cliente...</main>}><NuevoClienteContent /></Suspense>;
 }
 
+const MAX_LOGO_BYTES = 1024 * 1024;
+async function optimizeLogo(file: File): Promise<File> {
+ if (file.size <= MAX_LOGO_BYTES) return file;
+ const bitmap = await createImageBitmap(file);
+ try {
+  let scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  for (let attempt = 0; attempt < 12; attempt++) {
+   const canvas = document.createElement("canvas");
+   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+   const ctx = canvas.getContext("2d");
+   if (!ctx) throw new Error("No se pudo procesar el logo.");
+   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/webp", Math.max(0.4, 0.86 - attempt * 0.045)));
+   if (!blob) throw new Error("No se pudo comprimir el logo.");
+   if (blob.size <= MAX_LOGO_BYTES) return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp" });
+   scale *= 0.8;
+  }
+  throw new Error("No se pudo reducir el logo a 1 MB.");
+ } finally { bitmap.close(); }
+}
 function NuevoClienteContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -459,16 +480,21 @@ function NuevoClienteContent() {
     setField("passwordTemporal", chars.join(""));
   };
 
-  const handleLogo = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleLogo = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setError("Selecciona una imagen válida para el logo.");
       return;
     }
-    setLogo(file);
-    setLogoPreview(URL.createObjectURL(file));
-    setError("");
+    try {
+      const optimized = await optimizeLogo(file);
+      setLogo(optimized);
+      setLogoPreview(URL.createObjectURL(optimized));
+      setError("");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "No se pudo optimizar el logo.");
+    }
   };
 
 
@@ -485,7 +511,7 @@ function NuevoClienteContent() {
     setError("");
     setMessage("");
 
-    const niveles = Number(form.nivelesRed);
+    const niveles = Number(effectivePlan?.meses ?? 0) === 0 ? 3 : null;
     if (!form.nombreCliente.trim() || !form.identificacion.trim() || !form.email.trim() || !form.telefono.trim()) {
       return setError("Completa los campos obligatorios del cliente.");
     }
@@ -502,9 +528,6 @@ function NuevoClienteContent() {
         !/[A-Z]/.test(form.passwordTemporal) || !/[a-z]/.test(form.passwordTemporal) ||
         !/\d/.test(form.passwordTemporal) || !/[^A-Za-z0-9]/.test(form.passwordTemporal))) {
       return setError("Genera o escribe una contraseña temporal válida: mínimo 8 caracteres, mayúscula, minúscula, número y símbolo.");
-    }
-    if (!Number.isInteger(niveles) || niveles < 1) {
-      return setError("Los niveles de red deben ser un número entero mayor o igual a 1.");
     }
 
     setSaving(true);
@@ -1211,15 +1234,10 @@ function NuevoClienteContent() {
               </div>
             </section>
 
-            <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-[#1464d2] via-[#1678d4] to-[#08a6a6] p-6 text-white shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[.15em] text-white/70">Estructura</p>
-              <h2 className="mt-2 text-lg font-semibold">Niveles de red disponibles</h2>
-              <p className="mt-2 text-sm leading-6 text-white/80">Define hasta cuántos niveles descendentes podrá construir la red de este cliente.</p>
-              <div className="mt-5 flex items-center gap-3">
-                <button type="button" onClick={() => setField("nivelesRed", String(Math.max(1, Number(form.nivelesRed || 1) - 1)))} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-xl hover:bg-white/25">−</button>
-                <input type="number" min="1" step="1" value={form.nivelesRed} onChange={e => setField("nivelesRed", e.target.value)} className="h-12 min-w-0 flex-1 rounded-xl border border-white/20 bg-white px-3 text-center text-xl font-semibold text-slate-900 outline-none" />
-                <button type="button" onClick={() => setField("nivelesRed", String(Number(form.nivelesRed || 0) + 1))} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-xl hover:bg-white/25">+</button>
-              </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Estructura de red</p>
+              <h2 className="mt-1 text-base font-semibold text-slate-900">{Number(effectivePlan?.meses ?? 0) === 0 ? "3 niveles disponibles" : "Niveles ilimitados"}</h2>
+              <p className="mt-1 text-xs text-slate-500">{Number(effectivePlan?.meses ?? 0) === 0 ? "Plan Free: máximo 3 niveles." : "Sin límite de niveles para este plan."}</p>
             </div>
 
             {error && <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
