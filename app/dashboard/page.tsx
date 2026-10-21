@@ -123,8 +123,8 @@ export default function ClienteDashboardPage() {
               } as Notificacion;
             })
             .sort((a, b) => {
-              const av = a.fecha?.toMillis?.() ?? a.fecha?.seconds * 1000 ?? new Date(a.fecha || 0).getTime();
-              const bv = b.fecha?.toMillis?.() ?? b.fecha?.seconds * 1000 ?? new Date(b.fecha || 0).getTime();
+              const av = a.fecha?.toMillis?.() ?? (a.fecha?.seconds != null ? a.fecha.seconds * 1000 : new Date(a.fecha || 0).getTime());
+              const bv = b.fecha?.toMillis?.() ?? (b.fecha?.seconds != null ? b.fecha.seconds * 1000 : new Date(b.fecha || 0).getTime());
               return Number(bv || 0) - Number(av || 0);
             });
           setNotificaciones(notifRows);
