@@ -70,6 +70,7 @@ export default function PlanesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Plan | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -170,7 +171,7 @@ export default function PlanesPage() {
     setPrecios(normalizePrices(p.preciosCampana));
     setError("");
     setMessage("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setModalOpen(true);
   };
 
   const updatePrice = (id: string, value: string) => {
@@ -277,6 +278,7 @@ export default function PlanesPage() {
       }
 
       clearForm();
+      setModalOpen(false);
       await loadPlans();
     } catch (e) {
       console.error(e);
@@ -356,13 +358,16 @@ export default function PlanesPage() {
 
       <div className="mx-auto max-w-[1550px] px-4 py-7 sm:px-7">
         <section className="mb-7">
-          <div className="mb-4">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+            <div>
             <h2 className="text-xl font-semibold text-slate-950">
               Planes configurados
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-slate-500">
               Cada registro es una oferta independiente: puedes tener varios “Trimestral” con combinaciones distintas de campañas y precios.
             </p>
+            </div>
+            <button type="button" onClick={() => { clearForm(); setError(""); setMessage(""); setModalOpen(true); }} className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700">+ Crear nuevo plan</button>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -379,7 +384,7 @@ export default function PlanesPage() {
               return (
                 <article
                   key={p.id}
-                  className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm"
+                  className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
                 >
                   <div
                     className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${styles[i % styles.length]}`}
@@ -407,11 +412,11 @@ export default function PlanesPage() {
                     </span>
                   </div>
 
-                  <div className="mt-3 text-xs font-semibold text-slate-700">
+                  <div className={`mt-4 inline-flex w-fit rounded-xl px-3 py-2 text-xs font-semibold ${p.meses === 0 ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
                     {p.meses === 0 ? "Red limitada a 3 niveles" : "Red sin límite de niveles"}
                   </div>
-                  <div className="mt-5 rounded-2xl bg-slate-950 p-4 text-white">
-                    <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-white/50">
+                  <div className="mt-5 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 text-slate-900">
+                    <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-blue-500">
                       Precio final
                     </p>
                     {enabled.length > 0 ? (
@@ -426,7 +431,7 @@ export default function PlanesPage() {
                             </p>
                           );
                         })()}
-                        <p className="mt-1 text-[10px] text-white/45">
+                        <p className="mt-1 text-[10px] text-slate-500">
                           Según tipo de campaña
                         </p>
                       </>
@@ -449,7 +454,7 @@ export default function PlanesPage() {
                     </p>
                   )}
 
-                  <div className="mt-5 flex gap-2">
+                  <div className="mt-auto flex gap-2 pt-6">
                     <button
                       onClick={() => editPlan(p)}
                       className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
@@ -469,8 +474,10 @@ export default function PlanesPage() {
           </div>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[470px_1fr]">
-          <section className="h-fit rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {modalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) { setModalOpen(false); clearForm(); } }}>
+          <section role="dialog" aria-modal="true" aria-label={editing ? "Editar plan" : "Crear nuevo plan"} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7">
+            <div className="mb-4 flex justify-end"><button type="button" disabled={saving} onClick={() => { setModalOpen(false); clearForm(); }} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200" aria-label="Cerrar modal">✕ Cerrar</button></div>
             <div className="mb-5">
               <span className="rounded-full bg-blue-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-blue-600">
                 {editing ? "Edición" : "Nuevo"}
@@ -722,7 +729,7 @@ export default function PlanesPage() {
               {editing && (
                 <button
                   type="button"
-                  onClick={clearForm}
+                  onClick={() => { clearForm(); setModalOpen(false); }}
                   className="h-11 w-full rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Cancelar edición
@@ -730,7 +737,10 @@ export default function PlanesPage() {
               )}
             </form>
           </section>
+          </div>
+        )}
 
+        <div>
           <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 p-5 sm:p-6">
               <h2 className="text-lg font-semibold text-slate-950">
