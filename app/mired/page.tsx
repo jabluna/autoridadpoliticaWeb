@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { deleteApp, getApp, initializeApp } from "firebase/app";
-import { collection, deleteDoc, doc, getDoc, getDocs, getCountFromServer, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, updateDoc, where, writeBatch, increment, type DocumentSnapshot } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, getCountFromServer, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, updateDoc, where, writeBatch, increment, type DocumentSnapshot, type QuerySnapshot, type Query, type DocumentData } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 type Etiqueta = { id: string; nombre: string; color: string; descripcion?: string };
@@ -107,7 +107,7 @@ export default function MiRedPage() {
       const all: Nodo[] = [];
       let cursor: DocumentSnapshot | null = null;
       while (true) {
-        const snap = await getDocs(query(nodesRef(), orderBy("nombre"), ...(cursor ? [startAfter(cursor)] : []), limit(200)));
+        const snap: QuerySnapshot<DocumentData> = await getDocs(query(nodesRef(), orderBy("nombre"), ...(cursor ? [startAfter(cursor)] : []), limit(200)));
         all.push(...snap.docs.map(d => ({ id: d.id, ...d.data() } as Nodo)));
         if (all.length > 300) throw new Error("La red supera los 300 nodos. El recálculo completo debe realizarse en el servidor para evitar resultados parciales.");
         if (snap.size < 200) break;
@@ -189,7 +189,7 @@ export default function MiRedPage() {
       const unsubFocus = onSnapshot(doc(nodesRef(), focusId), s => { if (live) { if (!s.exists() || s.data().estado === "inactivo") { setFocusId(null); setFocusNode(null); } else setFocusNode({ id: s.id, ...s.data() } as Nodo); } }, e => notify(e.message));
     } else setFocusNode(null);
     setChildrenLoading(true); setBranchError("");
-    const q = query(nodesRef(), where("padreId", "==", focusId), limit(101));
+    const q: Query<DocumentData> = query(nodesRef(), where("padreId", "==", focusId), limit(101));
     const unsub = onSnapshot(q, snap => {
       if (!live) return;
       const active = snap.docs.map(d => ({ id: d.id, ...d.data() } as Nodo)).filter(n => n.estado !== "inactivo");
@@ -205,8 +205,8 @@ export default function MiRedPage() {
     setDirectoryLoading(true);
     try {
       const constraints = [orderBy("nombre"), limit(PAGE)];
-      const q = query(nodesRef(), ...(append && cursor ? [orderBy("nombre"), startAfter(cursor), limit(PAGE)] : constraints));
-      const snap = await getDocs(q);
+      const q: Query<DocumentData> = query(nodesRef(), ...(append && cursor ? [orderBy("nombre"), startAfter(cursor), limit(PAGE)] : constraints));
+      const snap: QuerySnapshot<DocumentData> = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Nodo)).filter(n => n.estado !== "inactivo");
       setDirectory(prev => append ? [...prev, ...data] : data);
       setDirectoryCursor(snap.docs[snap.docs.length - 1] || null);
@@ -219,8 +219,8 @@ export default function MiRedPage() {
     if (!clienteId || !campanaId) return;
     setPeopleLoading(true);
     try {
-      const q = query(peopleRef(peopleOwner), orderBy("nombre"), ...(append && cursor ? [startAfter(cursor)] : []), limit(PAGE));
-      const snap = await getDocs(q);
+      const q: Query<DocumentData> = query(peopleRef(peopleOwner), orderBy("nombre"), ...(append && cursor ? [startAfter(cursor)] : []), limit(PAGE));
+      const snap: QuerySnapshot<DocumentData> = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Persona));
       setPeople(prev => append ? [...prev, ...data] : data);
       setPeopleCursor(snap.docs[snap.docs.length - 1] || null);
@@ -429,8 +429,8 @@ export default function MiRedPage() {
       let cursor: DocumentSnapshot | null = null;
       let count = 0;
       do {
-        const q = query(peopleRef(peopleOwner), orderBy("nombre"), ...(cursor ? [startAfter(cursor)] : []), limit(250));
-        const snap = await getDocs(q);
+        const q: Query<DocumentData> = query(peopleRef(peopleOwner), orderBy("nombre"), ...(cursor ? [startAfter(cursor)] : []), limit(250));
+        const snap: QuerySnapshot<DocumentData> = await getDocs(q);
         for (const d of snap.docs) {
           const p = d.data() as Persona;
           sheet.addRow([p.nombre, p.apellido, p.identificacion, p.telefono, p.email, tag(p.etiquetaId)?.nombre || "", p.observaciones]);
@@ -521,8 +521,8 @@ export default function MiRedPage() {
       let cursor: DocumentSnapshot | null = null;
       let count = 0;
       do {
-        const q = query(nodesRef(), orderBy("nombre"), ...(cursor ? [startAfter(cursor)] : []), limit(250));
-        const snap = await getDocs(q);
+        const q: Query<DocumentData> = query(nodesRef(), orderBy("nombre"), ...(cursor ? [startAfter(cursor)] : []), limit(250));
+        const snap: QuerySnapshot<DocumentData> = await getDocs(q);
         for (const d of snap.docs) {
           const n = { id: d.id, ...d.data() } as Nodo;
           sheet.addRow([n.id, n.nivel, n.nombre, n.apellido, n.identificacion, n.telefono, n.email, tag(n.etiquetaId)?.nombre || "", n.padreId || "RAIZ", n.estado]);
