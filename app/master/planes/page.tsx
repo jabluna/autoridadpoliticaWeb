@@ -427,12 +427,12 @@ export default function PlanesPage() {
                           const max = Math.max(...finals);
                           return (
                             <p className="mt-1 text-lg font-semibold tracking-tight">
-                              {min === max ? money(min) : `${money(min)} – ${money(max)}`}
+                              {money(total)}
                             </p>
                           );
                         })()}
                         <p className="mt-1 text-[10px] text-slate-500">
-                          Según tipo de campaña
+                          Total de campañas habilitadas
                         </p>
                       </>
                     ) : (
