@@ -34,6 +34,7 @@ type Plan = {
   estado: "activo" | "inactivo";
   tipo: "base" | "personalizado";
   preciosCampana?: PrecioCampana[];
+  nivelesMaximos?: number | null;
 };
 
 const TIPOS_BASE: PrecioCampana[] = [
@@ -118,6 +119,7 @@ export default function PlanesPage() {
           await addDoc(collection(db, "planes"), {
             ...p,
             preciosCampana: TIPOS_BASE,
+            nivelesMaximos: p.meses === 0 ? 3 : null,
             creadoEn: serverTimestamp(),
           });
         }
@@ -253,6 +255,7 @@ export default function PlanesPage() {
         meses,
         descripcion: form.descripcion.trim(),
         descuento,
+        nivelesMaximos: meses === 0 ? 3 : null,
         preciosCampana: precios.map((p) => ({
           ...p,
           valor: Number(p.valor || 0),
@@ -404,6 +407,9 @@ export default function PlanesPage() {
                     </span>
                   </div>
 
+                  <div className="mt-3 text-xs font-semibold text-slate-700">
+                    {p.meses === 0 ? "Red limitada a 3 niveles" : "Red sin límite de niveles"}
+                  </div>
                   <div className="mt-5 rounded-2xl bg-slate-950 p-4 text-white">
                     <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-white/50">
                       Precio final
@@ -473,7 +479,7 @@ export default function PlanesPage() {
                 {editing ? `Editar ${editing.nombre}` : "Crear nuevo plan"}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                El plan define la duración; cada tipo de campaña tiene su propio valor.
+                El plan Free incluye 3 niveles de red; los planes de pago no tienen límite de niveles. Cada tipo de campaña tiene su propio valor.
               </p>
             </div>
 
