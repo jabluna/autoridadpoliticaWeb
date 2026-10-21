@@ -423,8 +423,7 @@ export default function PlanesPage() {
                       <>
                         {(() => {
                           const finals = enabled.map(x => finalPrice(x.valor, p.descuento || 0));
-                          const min = Math.min(...finals);
-                          const max = Math.max(...finals);
+                          const total = finals.reduce((sum, value) => sum + value, 0);
                           return (
                             <p className="mt-1 text-lg font-semibold tracking-tight">
                               {money(total)}
