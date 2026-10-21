@@ -46,6 +46,9 @@ type DashboardClient = {
     nombre?: string;
     meses?: number;
     tipo?: string;
+    valorFinal?: number;
+    descuento?: number;
+    valor?: number;
     preciosCampana?: Array<{
       id: string;
       nombre: string;
@@ -130,8 +133,8 @@ export default function MasterDashboardPage() {
         const rows = snap.docs.map(d => ({ id: d.id, ...d.data() } as DashboardClient));
 
         const sortedClients = [...rows].sort((a, b) => {
-          const aTime = a.creadoEn?.toMillis?.() ?? a.creadoEn?.seconds * 1000 ?? 0;
-          const bTime = b.creadoEn?.toMillis?.() ?? b.creadoEn?.seconds * 1000 ?? 0;
+          const aTime = a.creadoEn?.toMillis?.() ?? (a.creadoEn?.seconds != null ? a.creadoEn.seconds * 1000 : 0);
+          const bTime = b.creadoEn?.toMillis?.() ?? (b.creadoEn?.seconds != null ? b.creadoEn.seconds * 1000 : 0);
           return bTime - aTime;
         });
 
@@ -214,8 +217,8 @@ export default function MasterDashboardPage() {
           ...r,
           clienteNombre: clientNameMap.get(r.clienteId) || r.clienteNombre || "Cliente",
         })).sort((a,b)=>{
-          const at=a.creadoEn?.toMillis?.() ?? a.creadoEn?.seconds*1000 ?? 0;
-          const bt=b.creadoEn?.toMillis?.() ?? b.creadoEn?.seconds*1000 ?? 0;
+          const at=a.creadoEn?.toMillis?.() ?? (a.creadoEn?.seconds != null ? a.creadoEn.seconds * 1000 : 0);
+          const bt=b.creadoEn?.toMillis?.() ?? (b.creadoEn?.seconds != null ? b.creadoEn.seconds * 1000 : 0);
           return bt-at;
         });
 
