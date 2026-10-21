@@ -249,7 +249,7 @@ export default function NuevoClientePage() {
     return onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setCommercialRequests(rows);
-      setChannelRequest(prev => prev ? rows.find((x:any)=>x.id===prev.id) || prev : prev);
+      setChannelRequest((prev: any) => prev ? rows.find((x:any)=>x.id===prev.id) || prev : prev);
     }, e => console.error("Solicitudes en tiempo real:", e));
   }, [editId]);
 
