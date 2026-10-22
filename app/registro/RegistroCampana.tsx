@@ -1,7 +1,5 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { get, ref } from "firebase/database";
-import { rtdb } from "@/lib/firebase";
 
 export type CampanaInicial = {
  tipo: "municipal" | "departamental" | "nacional"; corporacion: string;
@@ -25,7 +23,7 @@ export default function RegistroCampana({nombre,initialName,onFinish,busy,submit
  const [catalogo,setCatalogo]=useState<Record<string,Record<string,Record<string,number>>>>({});
  const [draft,setDraft]=useState<Draft>({tipo:"municipal",corporacion:"alcaldia",nombreCampana:initialName,candidato:nombre,partidoMovimiento:"",lema:"",departamento:"",municipio:"",fechaEleccion:"",metaVotos:"",alcancePuestos:"todos"});
  const [selected,setSelected]=useState<string[]>([]);
- useEffect(()=>{get(ref(rtdb,"MUNICIPIOPUESTOS")).then(s=>{if(s.exists())setCatalogo(s.val());}).catch(()=>setError("No fue posible cargar el catálogo electoral. Comprueba el acceso a los datos territoriales."));},[]);
+ useEffect(()=>{const controller=new AbortController();fetch("/api/public/catalogo-electoral",{signal:controller.signal}).then(async response=>{if(!response.ok)throw new Error("Catálogo no disponible");return response.json();}).then(data=>setCatalogo(data)).catch(e=>{if(e.name!=="AbortError")setError("No fue posible cargar el catálogo electoral. Intenta nuevamente.");});return ()=>controller.abort();},[]);
  const departamentos=useMemo(()=>Object.keys(catalogo).sort(),[catalogo]);
  const municipios=useMemo(()=>Object.keys(catalogo[draft.departamento]||{}).sort(),[catalogo,draft.departamento]);
  const puestos=useMemo(()=>Object.entries(catalogo[draft.departamento]?.[draft.municipio]||{}).map(([nombre,mesas])=>({nombre,mesas:Number(mesas)||0})).sort((a,b)=>a.nombre.localeCompare(b.nombre)),[catalogo,draft.departamento,draft.municipio]);
