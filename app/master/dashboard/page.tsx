@@ -455,6 +455,14 @@ export default function MasterDashboardPage() {
           </button>
 
           <button
+            onClick={() => router.push("/master/solicitudes-registro")}
+            className="mb-1 flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm font-medium text-slate-300 transition hover:bg-white/[0.12] hover:text-white"
+          >
+            <Icon name="users" />
+            Solicitudes de registro
+          </button>
+
+          <button
             onClick={() => router.push("/master/clientes")}
             className="mb-1 flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm font-medium text-slate-300 transition hover:bg-white/[0.12] hover:text-white"
           >
