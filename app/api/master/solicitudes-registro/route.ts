@@ -57,6 +57,29 @@ export async function POST(req: NextRequest) {
         rol: "cliente_admin", tipoCliente: "candidato", estado: "activo",
         creadoEn: FieldValue.serverTimestamp(),
       });
+      if (data.campanaInicial && typeof data.campanaInicial === "object") {
+        const initial = data.campanaInicial as Record<string, unknown>;
+        const validCorporations = ["edil", "concejo", "alcaldia", "asamblea", "gobernacion", "presidencia"];
+        const validTypes = ["municipal", "departamental", "nacional"];
+        if (!validCorporations.includes(String(initial.corporacion)) || !validTypes.includes(String(initial.tipo)) ||
+            typeof initial.nombreCampana !== "string" || !initial.nombreCampana.trim() ||
+            typeof initial.candidato !== "string" || !initial.candidato.trim()) {
+          throw new Error("La configuración inicial de campaña no es válida.");
+        }
+        const campanaRef = clientRef.collection("campanas").doc();
+        tx.create(campanaRef, {
+          tipo: initial.tipo, corporacion: initial.corporacion,
+          nombreCampana: initial.nombreCampana, candidato: initial.candidato,
+          partidoMovimiento: String(initial.partidoMovimiento || ""), lema: String(initial.lema || ""),
+          departamento: String(initial.departamento || ""), municipio: String(initial.municipio || ""),
+          metaVotos: Number(initial.metaVotos) || 0, fechaEleccion: String(initial.fechaEleccion || ""),
+          alcancePuestos: initial.alcancePuestos === "seleccionados" ? "seleccionados" : "todos",
+          puestosSeleccionados: Array.isArray(initial.puestosSeleccionados) ? initial.puestosSeleccionados : [],
+          totalPuestos: Number(initial.totalPuestos) || 0, totalMesas: Number(initial.totalMesas) || 0,
+          nivelesMultiredPermitidos: 3, estado: "inactiva",
+          creadoEn: FieldValue.serverTimestamp(),
+        });
+      }
       tx.update(requestRef, { estado: "aprobado", clienteId: uid, revisadoPor: token.uid, revisadoEn: FieldValue.serverTimestamp() });
     });
     return NextResponse.json({ ok: true });
