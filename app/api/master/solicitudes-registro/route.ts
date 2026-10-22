@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
     const db = getFirestore(app);
     const token = await auth.verifyIdToken(bearer.slice(7), true);
     const master = await db.doc(`administradoresMaster/${token.uid}`).get();
-    if (!master.exists || master.get("estado") !== "activo" || master.get("rol") !== "master") {
+    const isOwner = Boolean(process.env.MASTER_OWNER_UID) && token.uid === process.env.MASTER_OWNER_UID;
+    const isAdmin = master.exists && master.get("estado") === "activo" && master.get("rol") === "master";
+    if (!isOwner && !isAdmin) {
       return NextResponse.json({ error: "No tienes permisos de administrador Master." }, { status: 403 });
     }
     const { uid, action } = await req.json() as { uid?: string; action?: string };
