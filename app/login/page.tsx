@@ -35,6 +35,8 @@ export default function ClienteLoginPage() {
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) { setCheckingSession(false); return; }
+      await currentUser.reload();
+      if (!currentUser.emailVerified) { setError("Debes confirmar tu correo electrónico antes de ingresar."); await signOut(auth); setCheckingSession(false); return; }
       const ok = await validateClientAccess(currentUser.uid);
       if (ok) { router.replace("/dashboard"); return; }
       await signOut(auth);
@@ -105,6 +107,7 @@ export default function ClienteLoginPage() {
       const normalizedEmail = email.trim().toLowerCase();
       await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
       const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+      if (!credential.user.emailVerified) { setError("Confirma tu correo electrónico antes de ingresar. Revisa tu bandeja de entrada."); await signOut(auth); return; }
       const ok = await validateClientAccess(credential.user.uid);
       if (!ok) { await signOut(auth); return; }
       try { if (remember) localStorage.setItem("autoridad-politica-cliente-email", normalizedEmail); else localStorage.removeItem("autoridad-politica-cliente-email"); } catch {}
