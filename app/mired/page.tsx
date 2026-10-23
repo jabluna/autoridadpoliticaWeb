@@ -195,7 +195,7 @@ export default function MiRedPage() {
 
   useEffect(() => {
     setFocusId(null); setChildrenPage(1); setFocusNode(null); setChildren([]); setDirectory([]); setPeople([]);
-    setDirectoryCursor(null); setPeopleCursor(null); setPeopleOwner(null); setBuscar(""); setEtiquetaFiltro(""); setGlobalSearch(""); setGlobalResults([]);
+    setDirectoryCursor(null); setPeopleCursor(null); setPeopleOwner(null); setBuscar(""); setEtiquetaFiltro(""); setGlobalSearch(""); setGlobalResults([]); setSearchCards(false);
   }, [campanaId]);
 
   useEffect(() => {
@@ -403,29 +403,27 @@ export default function MiRedPage() {
   };
 
   const lookupNodes = useCallback(async (value: string): Promise<Nodo[]> => {
-    const term = value.trim();
-    if (!term || !clienteId || !campanaId) return [];
-    const variants = [...new Set([term, term.toLowerCase(), term.charAt(0).toUpperCase() + term.slice(1).toLowerCase()])];
-    const fields = ["nombre", "apellido", "departamento", "ciudad", "identificacion", "telefono", "email"];
-    const requests = variants.flatMap(prefix => fields.map(field =>
-      getDocs(query(nodesRef(), orderBy(field), where(field, ">=", prefix), where(field, "<=", prefix + "\uf8ff"), limit(20)))));
-    if (/^\d{1,3}$/.test(term)) requests.push(getDocs(query(nodesRef(), where("edad", "==", Number(term)), limit(30))));
-    const matchingTags = etiquetas.filter(t => t.nombre.toLocaleLowerCase("es").includes(term.toLocaleLowerCase("es")));
-    matchingTags.forEach(t => requests.push(getDocs(query(nodesRef(), where("etiquetaId", "==", t.id), limit(30)))));
-    const results = await Promise.allSettled(requests);
-    const unique = new Map<string, Nodo>();
-    results.forEach(result => {
-      if (result.status !== "fulfilled") return;
-      result.value.docs.forEach(d => {
+    const normalize = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLocaleLowerCase("es").trim();
+    const terms = normalize(value).split(/\\s+/).filter(Boolean);
+    if (!terms.length || !clienteId || !campanaId) return [];
+    const results: Nodo[] = [];
+    let cursor: DocumentSnapshot | null = null;
+    // Paginación del índice de nodos: busca coincidencias parciales sin exigir prefijo exacto.
+    // Límite preventivo para no generar lecturas ilimitadas en redes grandes.
+    for (let page = 0; page < 10; page++) {
+      const constraints = cursor ? [orderBy("__name__"), startAfter(cursor), limit(300)] : [orderBy("__name__"), limit(300)];
+      const snap = await getDocs(query(nodesRef(), ...constraints));
+      snap.docs.forEach(d => {
         const n = { id: d.id, ...d.data() } as Nodo;
-        if (n.estado !== "inactivo") unique.set(n.id, n);
+        if (n.estado === "inactivo") return;
+        const fields = [fullName(n), n.email, n.identificacion, n.telefono, n.departamento, n.ciudad, n.edad, etiquetas.find(t => t.id === n.etiquetaId)?.nombre];
+        const searchable = normalize(fields.join(" "));
+        if (terms.every(t => searchable.includes(t))) results.push(n);
       });
-    });
-    const needle = term.toLocaleLowerCase("es");
-    return [...unique.values()].filter(n =>
-      [fullName(n), n.email, n.identificacion, n.telefono, n.departamento, n.ciudad, String(n.edad || ""), tag(n.etiquetaId)?.nombre]
-        .some(v => String(v || "").toLocaleLowerCase("es").includes(needle)))
-      .sort((x,y) => fullName(x).localeCompare(fullName(y))).slice(0, 50);
+      if (snap.size < 300 || results.length >= 200) break;
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+    return results.sort((x,y) => fullName(x).localeCompare(fullName(y), "es")).slice(0, 200);
   }, [clienteId, campanaId, nodesRef, etiquetas]);
 
   useEffect(() => {
@@ -588,13 +586,15 @@ export default function MiRedPage() {
       <div className="flex flex-wrap gap-2"><button onClick={() => setFocusId(null)} title="Ir a la raíz" className="rounded-xl border px-3 py-2 text-xs font-bold">⌂ Raíz</button><button onClick={() => void exportNodes()} disabled={exporting} className="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-40">{exporting ? "Exportando..." : "Exportar niveles Excel"}</button><button onClick={() => setFocusId(focusNode?.padreId || null)} disabled={!focusNode} title="Subir un nivel" className="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-40">↑ Subir</button><button onClick={() => setFullscreen(v => !v)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">{fullscreen ? "Salir de pantalla completa" : "⛶ Pantalla completa"}</button></div>
     </div>
     <div className="relative border-b border-slate-100 bg-white px-4 py-3">
-      <input value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} placeholder="⌕ Nombre, etiqueta, ciudad, departamento, edad, documento, teléfono o correo..." aria-label="Buscar líderes de toda la campaña" className={`${cls} max-w-2xl`} />
+      <input value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} placeholder="⌕ Busca por fragmentos: fusa, nombre, departamento, edad, etiqueta..." aria-label="Buscar líderes de toda la campaña" className={`${cls} max-w-2xl`} />
       {globalSearch.trim().length >= 2 && <div className="absolute left-4 right-4 top-full z-30 max-h-72 max-w-2xl overflow-auto rounded-xl border bg-white p-2 shadow-xl">
         {globalSearching && <p className="p-3 text-xs text-slate-500">Buscando...</p>}
         {!globalSearching && !globalResults.length && <p className="p-3 text-xs text-slate-500">No se encontraron líderes con esos datos.</p>}
-        {globalResults.map(n => <button key={n.id} type="button" onClick={() => { setFocusId(n.id); setGlobalSearch(""); setGlobalResults([]); }} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs hover:bg-emerald-50"><span className="font-bold">{fullName(n)} <span className="font-normal text-slate-400">· {tag(n.etiquetaId)?.nombre || "Sin etiqueta"}</span></span><span className="shrink-0 text-emerald-700">Nivel {n.nivel} →</span></button>)}
+        {globalResults.map(n => <button key={n.id} type="button" onClick={() => { setFocusId(n.id); setGlobalSearch(""); setGlobalResults([]); setSearchCards(false); }} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs hover:bg-emerald-50"><span className="font-bold">{fullName(n)} <span className="font-normal text-slate-400">· {tag(n.etiquetaId)?.nombre || "Sin etiqueta"}</span></span><span className="shrink-0 text-emerald-700">Nivel {n.nivel} →</span></button>)}
       </div>}
-      <p className="mt-1 text-[10px] text-slate-400">Busca líderes de cualquier nivel por nombre, etiqueta, ubicación, edad, documento, teléfono o correo. La edad se busca como número exacto.</p>
+      {globalSearch.trim().length >= 2 && !globalSearching && globalResults.length > 0 && <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><span className="text-xs font-bold text-emerald-950">{globalResults.length} líderes encontrados</span><button type="button" onClick={() => setSearchCards(v=>!v)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">{searchCards ? "Volver a lista" : "Ver tarjetas de resultados"}</button></div>}
+      {globalSearch.trim().length >= 2 && searchCards && <div className="mt-3 grid max-h-[450px] grid-cols-1 gap-3 overflow-auto rounded-xl bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-3">{globalResults.map(n => <div key={n.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-slate-900">{fullName(n)}</strong><span className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">Nivel {n.nivel}</span></div><p className="mt-2 text-xs text-slate-600">{[n.ciudad,n.departamento,etiquetas.find(t=>t.id===n.etiquetaId)?.nombre].filter(Boolean).join(" · ")}</p><p className="mt-2 text-sm font-bold text-slate-700">★ {n.puntuacion ?? "—"}/10</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { setFocusId(n.id); setGlobalSearch(""); setGlobalResults([]); setSearchCards(false); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Abrir en la red →</button><button type="button" onClick={() => {setRatingNode(n);setRatingValue(n.puntuacion ?? 5);}} className="rounded-lg border px-3 py-2 text-xs font-bold">✎ Calificar</button></div></div>)}</div>}
+      <p className="mt-1 text-[10px] text-slate-400">Escribe parte de una palabra (ej.: «fusa» encuentra «Fusagasugá»). Puedes combinar términos. «Ver tarjetas» muestra coincidencias sin cambiar la estructura de la red.</p>
     </div>
     <div className="flex-1 overflow-auto bg-slate-50/60 p-4" style={{ minHeight: fullscreen ? 0 : 420 }}>
       <div className="mx-auto max-w-6xl">
