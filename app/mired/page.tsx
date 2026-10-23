@@ -411,8 +411,9 @@ export default function MiRedPage() {
     // Paginación del índice de nodos: busca coincidencias parciales sin exigir prefijo exacto.
     // Límite preventivo para no generar lecturas ilimitadas en redes grandes.
     for (let page = 0; page < 10; page++) {
-      const constraints = cursor ? [orderBy("__name__"), startAfter(cursor), limit(300)] : [orderBy("__name__"), limit(300)];
-      const snap = await getDocs(query(nodesRef(), ...constraints));
+      const snap: QuerySnapshot<DocumentData> = await getDocs(cursor
+        ? query(nodesRef(), orderBy("__name__"), startAfter(cursor), limit(300))
+        : query(nodesRef(), orderBy("__name__"), limit(300)));
       snap.docs.forEach(d => {
         const n = { id: d.id, ...d.data() } as Nodo;
         if (n.estado === "inactivo") return;
