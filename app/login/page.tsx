@@ -6,6 +6,7 @@ import {
   browserSessionPersistence,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   setPersistence,
   signOut,
@@ -23,6 +24,7 @@ export default function ClienteLoginPage() {
   const [loading, setLoading] = useState(false);
   const [remember, setRemember] = useState(true);
   const [resetLoading, setResetLoading] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -36,7 +38,7 @@ export default function ClienteLoginPage() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) { setCheckingSession(false); return; }
       await currentUser.reload();
-      if (!currentUser.emailVerified) { setError("Debes confirmar tu correo electrónico antes de ingresar."); await signOut(auth); setCheckingSession(false); return; }
+      if (!currentUser.emailVerified) { setError("Debes confirmar tu correo electrónico antes de ingresar. Puedes reenviar el enlace desde esta pantalla."); await signOut(auth); setCheckingSession(false); return; }
       const ok = await validateClientAccess(currentUser.uid);
       if (ok) { router.replace("/dashboard"); return; }
       await signOut(auth);
@@ -107,7 +109,7 @@ export default function ClienteLoginPage() {
       const normalizedEmail = email.trim().toLowerCase();
       await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
       const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      if (!credential.user.emailVerified) { setError("Confirma tu correo electrónico antes de ingresar. Revisa tu bandeja de entrada."); await signOut(auth); return; }
+      if (!credential.user.emailVerified) { try { await sendEmailVerification(credential.user); setSuccess("Enviamos un enlace de verificación a tu correo. Revisa también Spam."); } catch { setError("No fue posible enviar la verificación automáticamente. Usa el botón para reenviarla."); } await signOut(auth); return; }
       const ok = await validateClientAccess(credential.user.uid);
       if (!ok) { await signOut(auth); return; }
       try { if (remember) localStorage.setItem("autoridad-politica-cliente-email", normalizedEmail); else localStorage.removeItem("autoridad-politica-cliente-email"); } catch {}
@@ -118,6 +120,18 @@ export default function ClienteLoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resendVerification = async () => {
+    clearMessages();
+    if (!email.trim() || !password) { setError("Escribe el correo y la contraseña del líder para reenviar la verificación."); return; }
+    setVerificationLoading(true);
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      if (credential.user.emailVerified) setSuccess("Este correo ya está verificado. Puedes iniciar sesión.");
+      else { await sendEmailVerification(credential.user); setSuccess("Enlace de verificación enviado. Revisa la bandeja de entrada y Spam."); }
+    } catch (err) { setError(getAuthErrorMessage(err)); }
+    finally { await signOut(auth).catch(() => undefined); setVerificationLoading(false); }
   };
 
   const handleResetPassword = async () => {
