@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { collection, doc, getDoc, getDocs, query, where, increment, serverTimestamp, writeBatch } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where, increment, serverTimestamp, writeBatch, type DocumentSnapshot, type DocumentData } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 
@@ -59,9 +59,9 @@ export default function LeaderPage() {
       while (cursor && !visited.has(cursor)) {
         if (cursor === scope.nodoId) { allowed = true; break; }
         visited.add(cursor);
-        const current = await getDoc(doc(base,cursor));
+        const current: DocumentSnapshot<DocumentData> = await getDoc(doc(base,cursor));
         if (!current.exists()) break;
-        cursor = current.data().padreId || null;
+        cursor = current.data()?.padreId || null;
       }
       if (!allowed) throw new Error("Este nodo no pertenece a tu red.");
       const current = await getDoc(doc(base,nodeId));
@@ -97,8 +97,8 @@ export default function LeaderPage() {
         visited.add(cursor);
         batch.update(doc(base,cursor),{votosRealesSubarbol:increment(1)});
         if(cursor===scope.nodoId) break;
-        const n=await getDoc(doc(base,cursor));
-        cursor=n.exists()?n.data().padreId||null:null;
+        const n: DocumentSnapshot<DocumentData> = await getDoc(doc(base,cursor));
+        cursor=n.exists()?(n.data()?.padreId || null):null;
       }
       await batch.commit();
       setPersonName("");setPersonLast("");setFormOpen(false);await showPeople();
