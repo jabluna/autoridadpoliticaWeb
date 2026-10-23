@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, getCountFromServer, query, where } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 
@@ -137,31 +137,26 @@ export default function ClienteDashboardPage() {
         const campRows = campSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
         setCampanas(campRows);
 
-        // Estas métricas quedarán alimentadas por la multired.
-        // Se intenta leer la subcolección "integrantes" de cada campaña;
-        // mientras aún no exista, el dashboard muestra 0 sin fallar.
+        // La multired utiliza nodos y personasRaiz; las estimaciones se guardan
+        // en metricas/red y los registros se cuentan por responsable.
         let integrantes = 0;
         let lideres = 0;
         let votosEstimados = 0;
-
         for (const camp of campRows) {
           try {
-            const miembrosSnap = await getDocs(
-              collection(db, "clientes", userData.clienteId, "campanas", camp.id, "integrantes")
-            );
-            integrantes += miembrosSnap.size;
-
-            miembrosSnap.docs.forEach(miembroDoc => {
-              const m = miembroDoc.data() as any;
-              if (m.esLider === true || m.rol === "lider") lideres += 1;
-
-              // La multired podrá guardar aporteVotosEstimados por integrante/líder.
-              // Si no existe aún, cada integrante confirmado aporta 1 voto base.
-              const aporte = Number(m.aporteVotosEstimados ?? m.votosEstimados ?? 1);
-              votosEstimados += Number.isFinite(aporte) ? aporte : 1;
-            });
+            const base = ["clientes", userData.clienteId, "campanas", camp.id];
+            const nodesSnap = await getDocs(collection(db, ...base, "nodos"));
+            const activeNodes = nodesSnap.docs.filter(d => d.data().estado !== "inactivo");
+            lideres += activeNodes.length;
+            const rootPeople = await getCountFromServer(collection(db, ...base, "personasRaiz"));
+            let registrados = rootPeople.data().count;
+            const counts = await Promise.all(activeNodes.map(n => getCountFromServer(collection(db, ...base, "nodos", n.id, "personas"))));
+            registrados += counts.reduce((sum, count) => sum + count.data().count, 0);
+            integrantes += registrados;
+            // Estimación propia de cada líder: evita sumar subárboles varias veces.
+            votosEstimados += activeNodes.reduce((sum, n) => sum + Number(n.data().estimacionVotos || 0), 0);
           } catch (networkError) {
-            console.warn("Aún no hay multired para campaña", camp.id, networkError);
+            console.warn("No fue posible cargar la multired de campaña", camp.id, networkError);
           }
         }
 
@@ -196,7 +191,7 @@ export default function ClienteDashboardPage() {
   const menu = [
     { label: "Dashboard", icon: "dashboard", active: true },
     { label: "Configuración de campaña", icon: "settings", href: "/configuracion-campana" },
-    { label: "Mi red", icon: "network" },
+    { label: "Mi red", icon: "network", href: "/mired" },
     { label: "Integrantes", icon: "users" },
     { label: "Territorio", icon: "map" },
     { label: "Estadísticas", icon: "chart" },
@@ -227,7 +222,7 @@ export default function ClienteDashboardPage() {
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">
-              {cliente?.nombreCampana || cliente?.nombreCliente}
+              {campanas[0]?.nombreCampana || cliente?.nombreCampana || cliente?.nombreCliente}
             </p>
             <p className="mt-0.5 truncate text-[11px] text-emerald-100/55">
               {cliente?.partidoMovimiento || "Gestión de campaña"}
@@ -620,7 +615,7 @@ export default function ClienteDashboardPage() {
 
               <div className="mt-5 space-y-4">
                 <InfoLine label="Cliente" value={cliente?.nombreCliente || "—"} />
-                <InfoLine label="Campaña" value={cliente?.nombreCampana || "—"} />
+                <InfoLine label="Campañas creadas" value={campanas.length ? campanas.map(c => c.nombreCampana).filter(Boolean).join(", ") : "Sin campañas"} />
                 <InfoLine label="Plan" value={cliente?.plan?.nombre || "—"} />
                 <InfoLine
                   label="Estado"
