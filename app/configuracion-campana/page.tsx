@@ -26,7 +26,10 @@ type Corporacion =
   | "asamblea"
   | "presidencia";
 type EstadoCampana = "activa" | "inactiva";
-type EtiquetaNodo = { id: string; nombre: string; color: string; descripcion?: string; creadoEn?: unknown };
+type EtiquetaNodo = { id: string; nombre: string; color: string; descripcion?: string; creadoEn?: unknown; eliminada?: boolean };
+// Catálogo inicial disponible para todos los clientes; cada cliente puede personalizarlo.
+const ETIQUETAS_PREDETERMINADAS: EtiquetaNodo[] = [{"id":"predeterminada-0","nombre":"empresa","color":"#2563eb"},{"id":"predeterminada-1","nombre":"comerciante","color":"#d97706"},{"id":"predeterminada-2","nombre":"madre comunitaria","color":"#db2777"},{"id":"predeterminada-3","nombre":"comunal","color":"#059669"},{"id":"predeterminada-4","nombre":"transportador","color":"#0891b2"},{"id":"predeterminada-5","nombre":"constructor","color":"#78716c"},{"id":"predeterminada-6","nombre":"pensionado","color":"#7c3aed"},{"id":"predeterminada-7","nombre":"reservista","color":"#475569"},{"id":"predeterminada-8","nombre":"deportista","color":"#16a34a"},{"id":"predeterminada-9","nombre":"cultural","color":"#e11d48"},{"id":"predeterminada-10","nombre":"concejal","color":"#4f46e5"},{"id":"predeterminada-11","nombre":"alcalde","color":"#dc2626"},{"id":"predeterminada-12","nombre":"junta acción comunal","color":"#0d9488"},{"id":"predeterminada-13","nombre":"gobernador","color":"#9333ea"},{"id":"predeterminada-14","nombre":"diputado","color":"#ea580c"},{"id":"predeterminada-15","nombre":"presidente","color":"#1d4ed8"}];
+
 
 type Campana = {
   id: string;
@@ -175,7 +178,10 @@ export default function ConfiguracionCampanaPage() {
   useEffect(() => {
     if (!clienteId) return;
     return onSnapshot(collection(db, "clientes", clienteId, "etiquetasNodo"), (snap) => {
-      setEtiquetas(snap.docs.map((item) => ({ id: item.id, ...item.data() } as EtiquetaNodo))
+      const guardadas = snap.docs.map((item) => ({ id: item.id, ...item.data() } as EtiquetaNodo));
+      const ids = new Set(guardadas.map((item) => item.id));
+      setEtiquetas([...ETIQUETAS_PREDETERMINADAS.filter((item) => !ids.has(item.id)), ...guardadas]
+        .filter((item) => !item.eliminada)
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es")));
     }, (e) => {
       console.error("Error cargando etiquetas:", e);
@@ -211,6 +217,7 @@ export default function ConfiguracionCampanaPage() {
         nombre,
         color: etiquetaColor,
         descripcion: etiquetaDescripcion.trim(),
+        eliminada: false,
         actualizadoEn: serverTimestamp(),
         ...(!etiquetaId ? { creadoEn: serverTimestamp() } : {}),
       }, { merge: true });
@@ -237,7 +244,11 @@ export default function ConfiguracionCampanaPage() {
     try {
       setEtiquetaBusy(true);
       setEtiquetaError("");
-      await deleteDoc(doc(db, "clientes", clienteId, "etiquetasNodo", etiqueta.id));
+      if (etiqueta.id.startsWith("predeterminada-")) {
+        await setDoc(doc(db, "clientes", clienteId, "etiquetasNodo", etiqueta.id), { eliminada: true, nombre: etiqueta.nombre, color: etiqueta.color, actualizadoEn: serverTimestamp() }, { merge: true });
+      } else {
+        await deleteDoc(doc(db, "clientes", clienteId, "etiquetasNodo", etiqueta.id));
+      }
       if (etiquetaId === etiqueta.id) limpiarEtiqueta();
       setMessage("Etiqueta eliminada.");
     } catch (e) {
