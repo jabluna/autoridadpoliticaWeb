@@ -14,7 +14,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { auth, db, rtdb } from "@/lib/firebase";
 
 type TipoCampana = "municipal" | "departamental" | "nacional";
@@ -83,7 +83,6 @@ const EMPTY_FORM = {
 
 export default function ConfiguracionCampanaPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +103,7 @@ export default function ConfiguracionCampanaPage() {
   const [requestedLevels, setRequestedLevels] = useState(0);
   const [step, setStep] = useState(1);
   const [etiquetasOpen, setEtiquetasOpen] = useState(false);
-  useEffect(() => { if (searchParams.get("etiquetas") === "1") setEtiquetasOpen(true); }, [searchParams]);
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("etiquetas") === "1") setEtiquetasOpen(true); }, []);
   const [etiquetas, setEtiquetas] = useState<EtiquetaNodo[]>([]);
   const [etiquetaId, setEtiquetaId] = useState<string | null>(null);
   const [etiquetaNombre, setEtiquetaNombre] = useState("");
