@@ -149,6 +149,8 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     } catch (e) { notify(e instanceof Error ? e.message : "No fue posible contar tu red."); }
     finally { setRebuilding(false); }
   };
+  useEffect(() => { if (leaderMode && leaderRoot && clienteId && campanaId) void recalculateLeaderTotals(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaderMode, leaderRoot, clienteId, campanaId]);
   const reconcileMetrics = async () => {
     if (leaderMode) { await recalculateLeaderTotals(); return; }
     if (!clienteId || !campanaId || rebuilding) return;
