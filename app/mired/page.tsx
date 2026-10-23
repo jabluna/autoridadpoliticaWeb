@@ -399,16 +399,27 @@ export default function MiRedPage() {
     const term = value.trim();
     if (!term || !clienteId || !campanaId) return [];
     const variants = [...new Set([term, term.toLowerCase(), term.charAt(0).toUpperCase() + term.slice(1).toLowerCase()])];
-    const requests = variants.flatMap(prefix => ["nombre", "apellido"].map(field =>
-      getDocs(query(nodesRef(), orderBy(field), where(field, ">=", prefix), where(field, "<=", prefix + "\uf8ff"), limit(12)))));
-    const results = await Promise.all(requests);
+    const fields = ["nombre", "apellido", "departamento", "ciudad", "identificacion", "telefono", "email"];
+    const requests = variants.flatMap(prefix => fields.map(field =>
+      getDocs(query(nodesRef(), orderBy(field), where(field, ">=", prefix), where(field, "<=", prefix + "\\uf8ff"), limit(20)))));
+    if (/^\\d{1,3}$/.test(term)) requests.push(getDocs(query(nodesRef(), where("edad", "==", Number(term)), limit(30))));
+    const matchingTags = etiquetas.filter(t => t.nombre.toLocaleLowerCase("es").includes(term.toLocaleLowerCase("es")));
+    matchingTags.forEach(t => requests.push(getDocs(query(nodesRef(), where("etiquetaId", "==", t.id), limit(30)))));
+    const results = await Promise.allSettled(requests);
     const unique = new Map<string, Nodo>();
-    results.forEach(snap => snap.docs.forEach(d => {
-      const n = { id: d.id, ...d.data() } as Nodo;
-      if (n.estado !== "inactivo") unique.set(n.id, n);
-    }));
-    return [...unique.values()].sort((a,b) => fullName(a).localeCompare(fullName(b))).slice(0, 24);
-  }, [clienteId, campanaId, nodesRef]);
+    results.forEach(result => {
+      if (result.status !== "fulfilled") return;
+      result.value.docs.forEach(d => {
+        const n = { id: d.id, ...d.data() } as Nodo;
+        if (n.estado !== "inactivo") unique.set(n.id, n);
+      });
+    });
+    const needle = term.toLocaleLowerCase("es");
+    return [...unique.values()].filter(n =>
+      [fullName(n), n.email, n.identificacion, n.telefono, n.departamento, n.ciudad, String(n.edad || ""), tag(n.etiquetaId)?.nombre]
+        .some(v => String(v || "").toLocaleLowerCase("es").includes(needle)))
+      .sort((x,y) => fullName(x).localeCompare(fullName(y))).slice(0, 50);
+  }, [clienteId, campanaId, nodesRef, etiquetas]);
 
   useEffect(() => {
     const seq = ++searchSeq.current;
@@ -570,13 +581,13 @@ export default function MiRedPage() {
       <div className="flex flex-wrap gap-2"><button onClick={() => setFocusId(null)} title="Ir a la raíz" className="rounded-xl border px-3 py-2 text-xs font-bold">⌂ Raíz</button><button onClick={() => void exportNodes()} disabled={exporting} className="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-40">{exporting ? "Exportando..." : "Exportar niveles Excel"}</button><button onClick={() => setFocusId(focusNode?.padreId || null)} disabled={!focusNode} title="Subir un nivel" className="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-40">↑ Subir</button><button onClick={() => setFullscreen(v => !v)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">{fullscreen ? "Salir de pantalla completa" : "⛶ Pantalla completa"}</button></div>
     </div>
     <div className="relative border-b border-slate-100 bg-white px-4 py-3">
-      <input value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} placeholder="⌕ Buscar líder en cualquier nivel (nombre o apellido)..." aria-label="Buscar líderes de toda la campaña" className={`${cls} max-w-2xl`} />
+      <input value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} placeholder="⌕ Nombre, etiqueta, ciudad, departamento, edad, documento, teléfono o correo..." aria-label="Buscar líderes de toda la campaña" className={`${cls} max-w-2xl`} />
       {globalSearch.trim().length >= 2 && <div className="absolute left-4 right-4 top-full z-30 max-h-72 max-w-2xl overflow-auto rounded-xl border bg-white p-2 shadow-xl">
         {globalSearching && <p className="p-3 text-xs text-slate-500">Buscando...</p>}
-        {!globalSearching && !globalResults.length && <p className="p-3 text-xs text-slate-500">Sin coincidencias por inicio de nombre o apellido.</p>}
+        {!globalSearching && !globalResults.length && <p className="p-3 text-xs text-slate-500">No se encontraron líderes con esos datos.</p>}
         {globalResults.map(n => <button key={n.id} type="button" onClick={() => { setFocusId(n.id); setGlobalSearch(""); setGlobalResults([]); }} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs hover:bg-emerald-50"><span className="font-bold">{fullName(n)} <span className="font-normal text-slate-400">· {tag(n.etiquetaId)?.nombre || "Sin etiqueta"}</span></span><span className="shrink-0 text-emerald-700">Nivel {n.nivel} →</span></button>)}
       </div>}
-      <p className="mt-1 text-[10px] text-slate-400">Búsqueda global por prefijo de nombre o apellido; no depende de las tarjetas cargadas.</p>
+      <p className="mt-1 text-[10px] text-slate-400">Busca líderes de cualquier nivel por nombre, etiqueta, ubicación, edad, documento, teléfono o correo. La edad se busca como número exacto.</p>
     </div>
     <div className="flex-1 overflow-auto bg-slate-50/60 p-4" style={{ minHeight: fullscreen ? 0 : 420 }}>
       <div className="mx-auto max-w-6xl">
