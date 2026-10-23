@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged, createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
+import { onAuthStateChanged, createUserWithEmailAndPassword, getAuth, sendEmailVerification, signOut } from "firebase/auth";
 import { deleteApp, getApp, initializeApp } from "firebase/app";
 import { collection, deleteDoc, doc, getDoc, getDocs, getCountFromServer, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, updateDoc, where, writeBatch, increment, type DocumentSnapshot, type QuerySnapshot, type Query, type DocumentData } from "firebase/firestore";
 import { auth, db, rtdb } from "@/lib/firebase";
@@ -364,7 +364,9 @@ export default function MiRedPage() {
           const parentAncestors = await ancestors(parentId);
           parentAncestors.forEach(id => batch.update(doc(nodesRef(), id), { votosEstimadosSubarbol: increment(Number(form.estimacionVotos)) }));
           batch.set(metricsRef(), { votosEstimados: increment(Number(form.estimacionVotos)) }, { merge: true });
-          await batch.commit(); notify("Nodo y cuenta de acceso creados. Entrega las credenciales por un canal seguro.", true);
+          await batch.commit();
+          try { await sendEmailVerification(credential.user); notify("Líder creado. Enviamos un correo de verificación a su dirección; debe confirmarlo antes de ingresar.", true); }
+          catch { notify("Líder creado, pero no se pudo enviar el correo de verificación. El líder podrá solicitar un nuevo envío desde el inicio de sesión.", true); }
         } catch (e) { if (uid) notify("Authentication pudo crear la cuenta sin completar Firestore. Verifica antes de reintentar."); throw e; }
         finally { await signOut(secondaryAuth).catch(() => undefined); await deleteApp(secondary).catch(() => undefined); }
       }
