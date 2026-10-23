@@ -40,25 +40,26 @@ export default function ClienteLoginPage() {
       await currentUser.reload();
       if (!currentUser.emailVerified) { setError("Debes confirmar tu correo electrónico antes de ingresar. Puedes reenviar el enlace desde esta pantalla."); await signOut(auth); setCheckingSession(false); return; }
       const ok = await validateClientAccess(currentUser.uid);
-      if (ok) { router.replace("/dashboard"); return; }
+      if (ok) { router.replace(ok === "lider" ? "/lider" : "/dashboard"); return; }
       await signOut(auth);
       setCheckingSession(false);
     });
     return unsubscribe;
   }, [router]);
 
-  const validateClientAccess = async (uid: string) => {
+  const validateClientAccess = async (uid: string): Promise<"admin" | "lider" | null> => {
     try {
       const us = await getDoc(doc(db, "usuarios", uid));
       if (!us.exists()) { setError("Esta cuenta no tiene acceso al panel de cliente."); return false; }
       const u = us.data() as any;
-      if (u.rol !== "cliente_admin" || u.estado === "inactivo" || !u.clienteId) { setError("Esta cuenta no corresponde a un cliente activo."); return false; }
+      if (!["cliente_admin", "red_usuario"].includes(u.rol) || u.estado === "inactivo" || !u.clienteId || (u.rol === "red_usuario" && (!u.campanaId || !u.nodoId))) { setError("Esta cuenta no tiene una asignación activa válida."); return null; }
       const cs = await getDoc(doc(db, "clientes", u.clienteId));
       if (!cs.exists()) { setError("No se encontró el cliente asociado."); return false; }
       const c = cs.data() as any;
       if ((c.estado || "activo") !== "activo") { setError("La cuenta del cliente está inactiva."); return false; }
-      if (c.planActivo === false) { setError("Tu plan todavía no está activo. El pago puede estar pendiente de aprobación."); return false; }
-      return true;
+      if (c.planActivo === false) { setError("Tu plan todavía no está activo. El pago puede estar pendiente de aprobación."); return null; }
+      if (u.rol === "red_usuario") { const n = await getDoc(doc(db, "clientes", u.clienteId, "campanas", u.campanaId, "nodos", u.nodoId)); if (!n.exists() || n.data().estado === "inactivo" || n.data().uid !== uid) { setError("El nodo asignado al líder no está activo."); return null; } return "lider"; }
+      return "admin";
     } catch (e) { console.error(e); setError("No fue posible validar tu acceso."); return false; }
   };
 
@@ -113,7 +114,7 @@ export default function ClienteLoginPage() {
       const ok = await validateClientAccess(credential.user.uid);
       if (!ok) { await signOut(auth); return; }
       try { if (remember) localStorage.setItem("autoridad-politica-cliente-email", normalizedEmail); else localStorage.removeItem("autoridad-politica-cliente-email"); } catch {}
-      router.replace("/dashboard");
+      router.replace(ok === "lider" ? "/lider" : "/dashboard");
     } catch (err: unknown) {
       console.error(err);
       setError(getAuthErrorMessage(err));
