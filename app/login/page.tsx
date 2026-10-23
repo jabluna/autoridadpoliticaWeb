@@ -158,7 +158,7 @@ export default function ClienteLoginPage() {
     }
   };
 
-  const busy = loading || resetLoading;
+  const busy = loading || resetLoading || verificationLoading;
 
   if (checkingSession) {
     return (
@@ -359,6 +359,8 @@ export default function ClienteLoginPage() {
                 {success}
               </div>
             )}
+
+            <button type="button" onClick={() => void resendVerification()} disabled={busy} className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800 disabled:opacity-50">{verificationLoading ? "Enviando verificación..." : "Reenviar correo de verificación"}</button>
 
             <button
               type="submit"
