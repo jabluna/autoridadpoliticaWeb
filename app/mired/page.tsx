@@ -403,8 +403,8 @@ export default function MiRedPage() {
   };
 
   const lookupNodes = useCallback(async (value: string): Promise<Nodo[]> => {
-    const normalize = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLocaleLowerCase("es").trim();
-    const terms = normalize(value).split(/\\s+/).filter(Boolean);
+    const normalize = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").trim();
+    const terms = normalize(value).split(/\s+/).filter(Boolean);
     if (!terms.length || !clienteId || !campanaId) return [];
     const results: Nodo[] = [];
     let cursor: DocumentSnapshot | null = null;
