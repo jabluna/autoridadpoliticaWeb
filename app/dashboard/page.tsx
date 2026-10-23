@@ -144,7 +144,7 @@ export default function ClienteDashboardPage() {
         let votosEstimados = 0;
         for (const camp of campRows) {
           try {
-            const base = ["clientes", userData.clienteId, "campanas", camp.id];
+            const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
             const nodesSnap = await getDocs(collection(db, ...base, "nodos"));
             const activeNodes = nodesSnap.docs.filter(d => d.data().estado !== "inactivo");
             lideres += activeNodes.length;
