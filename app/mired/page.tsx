@@ -399,7 +399,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
           uid = credential.user.uid;
           const nodeRef = doc(nodesRef());
           const batch = writeBatch(db);
-          batch.set(nodeRef, { ...payload, estimacionVotos: Number(form.estimacionVotos), votosEstimadosSubarbol: Number(form.estimacionVotos), votosRealesSubarbol: 0, email: form.email.trim().toLowerCase(), campanaId, padreId: parentId, nivel: level, uid, estado: "activo", creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() });
+          batch.set(nodeRef, { ...payload, multinodo, estimacionVotos: Number(form.estimacionVotos), votosEstimadosSubarbol: Number(form.estimacionVotos), votosRealesSubarbol: 0, email: form.email.trim().toLowerCase(), campanaId, padreId: parentId, nivel: level, uid, estado: "activo", creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() });
           batch.set(doc(db, "usuarios", uid), { uid, email: form.email.trim().toLowerCase(), nombre: payload.nombre, apellido: payload.apellido, rol: "red_usuario", estado: "activo", clienteId, campanaId, nodoId: nodeRef.id, creadoEn: serverTimestamp() });
           const parentAncestors = await ancestors(parentId);
           parentAncestors.forEach(id => batch.update(doc(nodesRef(), id), { votosEstimadosSubarbol: increment(Number(form.estimacionVotos)) }));
@@ -672,45 +672,38 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [networkStats, setNetworkStats] = useState<Record<string, { votos: number; directos: number; profundidad: number }>>({});
   useEffect(() => {
     if (!clienteId || !campanaId) { setNetworkStats({}); return; }
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const nodes: Nodo[] = [];
-        let cursor: DocumentSnapshot | null = null;
-        for (let page = 0; page < 20; page++) {
-          const snap: QuerySnapshot<DocumentData> = await getDocs(query(nodesRef(), orderBy("__name__"), ...(cursor ? [startAfter(cursor)] : []), limit(250)));
-          nodes.push(...snap.docs.map(d => ({ id: d.id, ...d.data() } as Nodo)));
-          if (snap.size < 250) break;
-          cursor = snap.docs[snap.docs.length - 1];
+    // Mantener los votos sincronizados con altas, ediciones y eliminaciones de cualquier nivel.
+    const refNodes = collection(db, "clientes", clienteId, "campanas", campanaId, "nodos");
+    return onSnapshot(query(refNodes, limit(5001)), snap => {
+      if (snap.size > 5000) { notify("La red supera 5.000 líderes: el cálculo debe migrarse al servidor."); return; }
+      const active = snap.docs.map(d => ({ id: d.id, ...d.data() } as Nodo)).filter(n => n.estado !== "inactivo");
+      const byParent = new Map<string, Nodo[]>();
+      for (const n of active) { const k = n.padreId || ""; byParent.set(k, [...(byParent.get(k) || []), n]); }
+      const computed: Record<string, { votos: number; directos: number; profundidad: number }> = {};
+      const visiting = new Set<string>();
+      const compute = (n: Nodo): { votos: number; directos: number; profundidad: number } => {
+        if (computed[n.id]) return computed[n.id];
+        if (visiting.has(n.id)) throw new Error("Jerarquía circular detectada.");
+        visiting.add(n.id);
+        const direct = byParent.get(n.id) || [];
+        // Sin multinodo, el valor comprometido por el líder se contabiliza como aporte.
+        // Con red, su aporte propio es 1 más los aportes de sus descendientes.
+        let votos = n.multinodo === false ? Math.max(1, Number(n.estimacionVotos) || 1) : 1;
+        let profundidad = 0;
+        for (const child of direct) {
+          const stats = compute(child);
+          votos += stats.votos;
+          profundidad = Math.max(profundidad, 1 + stats.profundidad);
         }
-        if (nodes.length >= 5000) throw new Error("La red supera el límite de cálculo visual; se requiere agregación en servidor.");
-        const active = nodes.filter(n => n.estado !== "inactivo");
-        const byParent = new Map<string, Nodo[]>();
-        for (const n of active) { const k = n.padreId || ""; byParent.set(k, [...(byParent.get(k) || []), n]); }
-        const computed: Record<string, { votos: number; directos: number; profundidad: number }> = {};
-        const visiting = new Set<string>();
-        const compute = (id: string): { votos: number; directos: number; profundidad: number } => {
-          if (computed[id]) return computed[id];
-          if (visiting.has(id)) throw new Error("Jerarquía circular detectada.");
-          visiting.add(id);
-          const direct = byParent.get(id) || [];
-          let votos = 1;
-          let profundidad = 0;
-          for (const child of direct) {
-            const stats = compute(child.id);
-            votos += stats.votos;
-            profundidad = Math.max(profundidad, 1 + stats.profundidad);
-          }
-          visiting.delete(id);
-          return computed[id] = { votos, directos: direct.length, profundidad };
-        };
-        for (const n of active) compute(n.id);
-        if (!cancelled) setNetworkStats(computed);
-      } catch (e) { if (!cancelled) notify(e instanceof Error ? e.message : "No se pudo calcular la red."); }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, [clienteId, campanaId, nodesRef, children]);
+        visiting.delete(n.id);
+        return computed[n.id] = { votos, directos: direct.length, profundidad };
+      };
+      try {
+        for (const n of active) compute(n);
+        setNetworkStats(computed);
+      } catch (e) { notify(e instanceof Error ? e.message : "No se pudo calcular la red."); }
+    }, e => notify(e.message || "No se pudo consultar la red."));
+  }, [clienteId, campanaId]);
   const statsFor = (n: Nodo) => networkStats[n.id] || { votos: 1, directos: 0, profundidad: 0 };
   const estimateGap = (n: Nodo) => Number(n.estimacionVotos || 0) - statsFor(n).votos;
 
