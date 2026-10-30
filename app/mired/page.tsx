@@ -668,6 +668,52 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     finally { setExporting(false); }
   };
 
+  // Votos: cada líder activo cuenta una sola vez. Matriz: líderes directos x profundidad descendiente.
+  const [networkStats, setNetworkStats] = useState<Record<string, { votos: number; directos: number; profundidad: number }>>({});
+  useEffect(() => {
+    if (!clienteId || !campanaId) { setNetworkStats({}); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const nodes: Nodo[] = [];
+        let cursor: DocumentSnapshot | null = null;
+        for (let page = 0; page < 20; page++) {
+          const snap: QuerySnapshot<DocumentData> = await getDocs(query(nodesRef(), orderBy("__name__"), ...(cursor ? [startAfter(cursor)] : []), limit(250)));
+          nodes.push(...snap.docs.map(d => ({ id: d.id, ...d.data() } as Nodo)));
+          if (snap.size < 250) break;
+          cursor = snap.docs[snap.docs.length - 1];
+        }
+        if (nodes.length >= 5000) throw new Error("La red supera el límite de cálculo visual; se requiere agregación en servidor.");
+        const active = nodes.filter(n => n.estado !== "inactivo");
+        const byParent = new Map<string, Nodo[]>();
+        for (const n of active) { const k = n.padreId || ""; byParent.set(k, [...(byParent.get(k) || []), n]); }
+        const computed: Record<string, { votos: number; directos: number; profundidad: number }> = {};
+        const visiting = new Set<string>();
+        const compute = (id: string): { votos: number; directos: number; profundidad: number } => {
+          if (computed[id]) return computed[id];
+          if (visiting.has(id)) throw new Error("Jerarquía circular detectada.");
+          visiting.add(id);
+          const direct = byParent.get(id) || [];
+          let votos = 1;
+          let profundidad = 0;
+          for (const child of direct) {
+            const stats = compute(child.id);
+            votos += stats.votos;
+            profundidad = Math.max(profundidad, 1 + stats.profundidad);
+          }
+          visiting.delete(id);
+          return computed[id] = { votos, directos: direct.length, profundidad };
+        };
+        for (const n of active) compute(n.id);
+        if (!cancelled) setNetworkStats(computed);
+      } catch (e) { if (!cancelled) notify(e instanceof Error ? e.message : "No se pudo calcular la red."); }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [clienteId, campanaId, nodesRef, children]);
+  const statsFor = (n: Nodo) => networkStats[n.id] || { votos: 1, directos: 0, profundidad: 0 };
+  const estimateGap = (n: Nodo) => Number(n.estimacionVotos || 0) - statsFor(n).votos;
+
   const graph = <section className={`flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${fullscreen ? "fixed inset-0 z-40 rounded-none" : ""}`}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
       <div><h2 className="font-bold">Explorador de nodos · {campanas.find(c => c.id === campanaId)?.nombreCampana}</h2><p className="text-xs text-slate-500">Explora un nodo a la vez. Usa el buscador para localizar líderes de otros niveles.</p></div>
@@ -697,7 +743,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
           <p className="mt-2 text-[10px] text-white/70">{children.length} líderes directos · Sin límite horizontal · Suelta aquí para reasignar</p>
         </div>
         {childrenLoading ? <p className="p-10 text-center text-sm">Cargando nodos...</p> : <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{visibleChildren.map(n => <div key={n.id} draggable={!busy} onDragStart={e => { setDragId(n.id); setDragNode(n); e.dataTransfer.setData("text/plain", n.id); e.dataTransfer.effectAllowed="move"; }} onDragEnd={() => { setDragId(null); setDragNode(null); }} onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect="move"; }} onDrop={e => { e.preventDefault(); e.stopPropagation(); if (dragNode) void move(dragNode, n.id); }} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-emerald-400">
-          <div className="flex items-center justify-between gap-1"><span className="text-[10px] font-bold text-slate-400">N{n.nivel}</span><div className="flex items-center gap-1"><button type="button" title="Abrir nodo" aria-label={`Abrir ${fullName(n)}`} onClick={() => setFocusId(n.id)} className="rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-sm font-black text-white shadow">↓</button><button type="button" title="Subir al nodo superior" aria-label="Subir" onClick={() => setFocusId(n.padreId)} className="rounded-md border border-slate-400 bg-slate-800 px-2 py-1 text-sm font-black text-white shadow">↑</button><button type="button" title="Ir a raíz" aria-label="Raíz" onClick={() => setFocusId(leaderMode ? leaderRoot : null)} className="rounded-md border border-violet-700 bg-violet-700 px-2 py-1 text-sm font-black text-white shadow">⌂</button><span title="Arrastrar nodo" className="cursor-grab px-1 text-slate-400">⠿</span></div></div>
+          <div className="flex items-center justify-between gap-1"><span className="text-[10px] font-bold text-slate-400">N{n.nivel}</span><div className="flex items-center gap-1"><button type="button" title="Mi red" aria-label={`Mi red de ${fullName(n)}`} onClick={() => setFocusId(n.id)} className="rounded-lg border border-emerald-700 bg-emerald-700 px-3 py-1.5 text-xs font-black text-white shadow">↓ Mi red</button><button type="button" title="Subir al nodo superior" aria-label="Subir" onClick={() => setFocusId(n.padreId)} className="rounded-md border border-slate-400 bg-slate-800 px-2 py-1 text-sm font-black text-white shadow">↑</button><button type="button" title="Ir a raíz" aria-label="Raíz" onClick={() => setFocusId(leaderMode ? leaderRoot : null)} className="rounded-md border border-violet-700 bg-violet-700 px-2 py-1 text-sm font-black text-white shadow">⌂</button><span title="Arrastrar nodo" className="cursor-grab px-1 text-slate-400">⠿</span></div></div>
           <button type="button" onClick={() => setFocusId(n.id)} className="mt-1 block w-full truncate text-left text-sm font-bold hover:text-emerald-700" title={fullName(n)}>{fullName(n)}</button><div className="mt-1 flex min-w-0 items-center gap-1"><span className="max-w-[48%] shrink-0 truncate rounded-md border px-2 py-0.5 text-[10px] font-extrabold" style={{ color: tag(n.etiquetaId)?.color || "#475569", backgroundColor: tag(n.etiquetaId)?.color ? `${tag(n.etiquetaId)?.color}22` : "#F1F5F9", borderColor: tag(n.etiquetaId)?.color || "#CBD5E1" }}>{tag(n.etiquetaId)?.nombre || "Sin etiqueta"}</span><span className="min-w-0 truncate text-[10px] text-slate-500" title={n.email}>{n.email}</span></div>
           <div className={`mt-3 rounded-xl border px-3 py-3 ${n.puntuacion == null ? "border-slate-200 bg-slate-50" : n.puntuacion >= 8 ? "border-lime-300 bg-lime-50" : n.puntuacion >= 5 ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50"}`}>
             <div className="flex items-center justify-between gap-2">
@@ -709,7 +755,10 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
           {n.nivel >= niveles && <button type="button" onClick={() => void requestMoreLevels()} className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-left text-[10px] font-bold text-amber-900">Nivel {n.nivel}: límite del plan ({niveles} niveles). Solicitar ampliación ↗</button>}
           {n.nivel < niveles && n.multinodo === false && <button type="button" onClick={() => openForm("nodo", n.padreId, n)} className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-left text-[10px] font-bold text-slate-700">Multinodo deshabilitado · Editar líder para activarlo ✎</button>}
           <p className="mt-1 truncate text-[10px] text-slate-500">{[n.ciudad, n.departamento, n.edad ? `${n.edad} años` : ""].filter(Boolean).join(" · ")}</p>
-          <div className="mt-2 grid grid-cols-2 gap-1 text-[10px]"><div className="rounded-md bg-amber-50 p-2 text-amber-900"><span className="block">Estimación acumulada</span><strong className="text-sm">{metricsReady ? Number(n.votosEstimadosSubarbol ?? 0).toLocaleString("es-CO") : "—"}</strong></div><div className="rounded-md bg-blue-50 p-2 text-blue-900"><span className="block">Registros acumulados</span><strong className="text-sm">{metricsReady ? Number(n.votosRealesSubarbol ?? 0).toLocaleString("es-CO") : "—"}</strong></div></div><div className="mt-2 flex flex-wrap gap-1 border-t pt-2"><button onClick={() => showPeople(n.id)} title="Ver personas" className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">♧ Personas</button><button onClick={() => openForm("persona", n.id)} title="Registrar persona" className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">+ Registrar persona</button><button type="button" disabled={n.nivel >= niveles || n.multinodo === false} onClick={() => { setFocusId(n.id); openForm("nodo", n.id); }} title={n.nivel >= niveles ? `Límite de ${niveles} niveles del plan. Solicita ampliación.` : n.multinodo === false ? "Habilita multinodo editando este líder" : "Registrar líder descendiente"} className="rounded-md bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-800 disabled:cursor-not-allowed disabled:opacity-50">+ Registrar como líder</button><button onClick={() => openMove(n)} title="Mover a otro nodo, incluso fuera de esta vista" className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">⇄ Mover</button><button onClick={() => openForm("nodo", n.padreId, n)} title="Editar" className="rounded-md border px-2 py-1 text-[10px]">✎</button><button onClick={() => void removeNode(n)} title="Retirar" className="rounded-md border border-red-100 px-2 py-1 text-[10px] text-red-600">×</button></div>
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center"><div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Votos de mi red</div><div className="mt-1 flex items-center justify-center gap-3"><strong className="text-3xl font-black text-emerald-900">{statsFor(n).votos.toLocaleString("es-CO")}</strong><span className="rounded-lg bg-emerald-800 px-3 py-2 text-base font-black text-white">{statsFor(n).directos} × {statsFor(n).profundidad}</span></div></div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]"><div className="rounded-lg bg-amber-50 p-2 text-amber-900"><span className="block">Estimado manual</span><strong className="text-base">{Number(n.estimacionVotos || 0).toLocaleString("es-CO")}</strong><button type="button" onClick={() => openForm("nodo", n.padreId, n)} className="ml-2 rounded border border-amber-200 px-1.5 py-0.5 font-bold">✎</button></div><div className="rounded-lg bg-indigo-50 p-2 text-indigo-900"><span className="block">Diferencia estimado − votos</span><strong className={`text-base ${estimateGap(n) < 0 ? "text-red-700" : "text-indigo-900"}`}>{estimateGap(n).toLocaleString("es-CO")}</strong></div></div>
+          <div className="mt-2 rounded-lg bg-sky-50 p-2 text-xs text-sky-900"><span className="font-semibold">♧ Registrados en reuniones:</span> <strong>{Number(n.votosRealesSubarbol || 0).toLocaleString("es-CO")}</strong><span className="block text-[10px] text-sky-700">Informativo · no suma votos</span></div>
+          <div className="mt-2 flex flex-wrap gap-1 border-t pt-2"><button onClick={() => showPeople(n.id)} title="Ver personas" className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">♧ Personas</button><button onClick={() => openForm("persona", n.id)} title="Registrar persona" className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">+ Registrar persona</button><button type="button" disabled={n.nivel >= niveles || n.multinodo === false} onClick={() => { setFocusId(n.id); openForm("nodo", n.id); }} title={n.nivel >= niveles ? `Límite de ${niveles} niveles del plan. Solicita ampliación.` : n.multinodo === false ? "Habilita multinodo editando este líder" : "Registrar líder descendiente"} className="rounded-md bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-800 disabled:cursor-not-allowed disabled:opacity-50">+ Registrar como líder</button><button onClick={() => openMove(n)} title="Mover a otro nodo, incluso fuera de esta vista" className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">⇄ Mover</button><button onClick={() => openForm("nodo", n.padreId, n)} title="Editar" className="rounded-md border px-2 py-1 text-[10px]">✎</button><button onClick={() => void removeNode(n)} title="Retirar" className="rounded-md border border-red-100 px-2 py-1 text-[10px] text-red-600">×</button></div>
         </div>)}</div>}{!childrenLoading && childrenPages > 1 && <div className="mt-5 flex flex-wrap items-center justify-center gap-3"><button type="button" disabled={childrenPage <= 1} onClick={() => setChildrenPage(p => Math.max(1,p-1))} className="rounded-xl border bg-white px-4 py-2 text-xs font-bold disabled:opacity-40">← Anterior</button><span className="text-xs font-semibold text-slate-600">Página {childrenPage} de {childrenPages} · {children.length} líderes</span><button type="button" disabled={childrenPage >= childrenPages} onClick={() => setChildrenPage(p => Math.min(childrenPages,p+1))} className="rounded-xl border bg-white px-4 py-2 text-xs font-bold disabled:opacity-40">Siguiente →</button></div>}
         {!childrenLoading && !children.length && <p className="mt-8 text-center text-sm text-slate-400">Este nodo aún no tiene nodos directos.</p>}{branchError && <p className="mt-3 text-center text-xs text-amber-700">{branchError}</p>}
       </div>
