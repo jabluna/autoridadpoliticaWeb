@@ -327,6 +327,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     }, 350);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [buscar, vista, clienteId, campanaId, peopleOwner, nodesRef, peopleRef, etiquetas]);
+  const [networkStats, setNetworkStats] = useState<Record<string, { votos: number; directos: number; profundidad: number }>>({});
   const [leaderFilter, setLeaderFilter] = useState("");
   const [leaderSort, setLeaderSort] = useState<"votos" | "nombre" | "estimado" | "calificacion">("votos");
   const [leaderPageSize, setLeaderPageSize] = useState(12);
@@ -673,7 +674,6 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   };
 
   // Votos: cada líder activo cuenta una sola vez. Matriz: líderes directos x profundidad descendiente.
-  const [networkStats, setNetworkStats] = useState<Record<string, { votos: number; directos: number; profundidad: number }>>({});
   useEffect(() => {
     if (!clienteId || !campanaId) { setNetworkStats({}); setRootTotals({ votos: 0, estimados: 0, directos: 0, profundidad: 0 }); return; }
     // Mantener los votos sincronizados con altas, ediciones y eliminaciones de cualquier nivel.
