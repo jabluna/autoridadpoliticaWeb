@@ -187,7 +187,7 @@ export default function ClientesMasterPage() {
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${c.tipoCliente === "agencia" ? "bg-violet-50 text-violet-600" : "bg-blue-50 text-blue-600"}`}>{c.tipoCliente === "agencia" ? "Agencia" : "Candidato"}</span></td>
                     <td className="px-5 py-4"><p className="max-w-[190px] truncate text-sm text-slate-700">{c.nombreCampana || "—"}</p><p className="mt-1 max-w-[190px] truncate text-xs text-slate-400">{c.partidoMovimiento || "Sin partido/movimiento"}</p></td>
                     <td className="px-5 py-4"><p className="text-sm font-semibold text-slate-700">{c.plan?.nombre || "Sin plan"}</p><p className="mt-1 text-xs text-slate-400">{c.plan?.meses === 0 ? "Free" : c.plan?.meses ? `${c.plan.meses} meses` : "—"}</p></td>
-                    <td className="px-5 py-4"><span className="rounded-lg bg-cyan-50 px-2.5 py-1.5 text-xs font-semibold text-cyan-700">{c.nivelesRed || 1} niveles</span></td>
+                    <td className="px-5 py-4"><span className="rounded-lg bg-cyan-50 px-2.5 py-1.5 text-xs font-semibold text-cyan-700">{Number(c.plan?.meses ?? 0) > 0 ? "Niveles ilimitados" : `${c.nivelesRed || 3} niveles`}</span></td>
                     <td className="px-5 py-4"><p className="max-w-[210px] truncate text-sm text-slate-700">{c.email}</p><p className="mt-1 text-xs text-slate-400">{c.telefono}</p></td>
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${(c.estado || "activo") === "activo" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{c.estado || "activo"}</span></td>
                     <td className="px-5 py-4">
