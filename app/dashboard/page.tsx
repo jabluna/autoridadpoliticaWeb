@@ -61,6 +61,8 @@ export default function ClienteDashboardPage() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [campanas, setCampanas] = useState<any[]>([]);
+  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }>>([]);
+  const [liderSeleccionado, setLiderSeleccionado] = useState("");
   const [redMetricas, setRedMetricas] = useState({
     integrantes: 0,
     lideres: 0,
@@ -144,11 +146,41 @@ export default function ClienteDashboardPage() {
         let lideres = 0;
         let votosEstimados = 0;
         let votosRed = 0;
+        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
             const nodesSnap = await getDocs(collection(db, ...base, "nodos"));
             const activeNodes = nodesSnap.docs.filter(d => d.data().estado !== "inactivo");
+            const nodeMap = new Map(activeNodes.map(n => [n.id, n.data()]));
+            const directChildren = new Map<string, string[]>();
+            for (const node of activeNodes) {
+              const parent = String(node.data().padreId || "");
+              directChildren.set(parent, [...(directChildren.get(parent) || []), node.id]);
+            }
+            const voteCache = new Map<string, number>();
+            const calculateVotes = (id: string, seen = new Set<string>()): number => {
+              if (voteCache.has(id)) return voteCache.get(id)!;
+              if (seen.has(id)) return 0;
+              const data = nodeMap.get(id);
+              if (!data) return 0;
+              const next = new Set(seen); next.add(id);
+              const own = data.multinodo === false ? Math.max(1, Number(data.estimacionVotos) || 1) : 1;
+              const total = own + (directChildren.get(id) || []).reduce((sum, child) => sum + calculateVotes(child, next), 0);
+              voteCache.set(id, total);
+              return total;
+            };
+            for (const node of activeNodes) {
+              const data = node.data();
+              perfiles.push({
+                id: `${camp.id}:${node.id}`,
+                nombre: [data.nombre, data.apellido].filter(Boolean).join(" ") || "Líder",
+                ciudad: String(data.municipio || data.ciudad || "Ciudad no registrada"),
+                fotoUrl: String(data.fotoUrl || ""),
+                votos: calculateVotes(node.id),
+                estimado: Number(data.estimacionVotos || 0),
+              });
+            }
             lideres += activeNodes.length;
             const rootPeople = await getCountFromServer(collection(db, ...base, "personasRaiz"));
             let registrados = rootPeople.data().count;
@@ -170,6 +202,8 @@ export default function ClienteDashboardPage() {
         }
 
         setRedMetricas({ integrantes, lideres, votosEstimados, votosRed });
+        setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
+        setLiderSeleccionado(current => current && perfiles.some(p => p.id === current) ? current : (perfiles[0]?.id || ""));
         setLoading(false);
       } catch (error) {
         console.error(error);
@@ -461,7 +495,8 @@ export default function ClienteDashboardPage() {
                   <MetricCard label="Cumplimiento" value={`${avance.toFixed(1)}%`} foot="Votos de la red frente al estimado" icon="network" />
                 </section>
 
-                <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <section className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <div className="min-w-0"><section className="h-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-base font-semibold text-slate-900">Proyección electoral</p>
@@ -509,6 +544,11 @@ export default function ClienteDashboardPage() {
                         </div>
                       ))
                     )}
+                  </div>
+                </section></div>
+                  <div className="min-w-0 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Ficha de líder</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><select aria-label="Seleccionar líder" value={liderSeleccionado} onChange={e=>setLiderSeleccionado(e.target.value)} className="max-w-[210px] rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs">{lideresResumen.length ? lideresResumen.map(l=><option key={l.id} value={l.id}>{l.nombre}</option>) : <option value="">Sin líderes</option>}</select></div>
+                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div></>})()}
                   </div>
                 </section>
               </>
