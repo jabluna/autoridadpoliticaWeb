@@ -431,22 +431,10 @@ export default function ClienteDashboardPage() {
           </div>
         </header>
 
-        <div className="px-4 py-6 sm:px-6 xl:px-8 xl:py-8">
-          <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#073b38] via-[#075a53] to-[#0b8c7d] p-6 text-white shadow-lg shadow-emerald-900/10 sm:p-8">
-            <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full border border-white/10" />
-            <div className="absolute -right-5 -top-5 h-40 w-40 rounded-full border border-white/10" />
-            <div className="relative max-w-3xl">
-              <span className="inline-flex rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[.15em] text-emerald-100">
-                Centro de control
-              </span>
-              <h2 className="mt-4 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
-                Bienvenido, {nombre}
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
-                Aquí tendrás la visión general de tu campaña, crecimiento de la red,
-                líderes, integrantes y comportamiento territorial.
-              </p>
-            </div>
+        <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm sm:px-5">
+            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><h2 className="mt-0.5 truncate text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2><p className="text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
+            <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Explorar Mi Red →</button>
           </section>
 
           {(() => {
@@ -459,7 +447,7 @@ export default function ClienteDashboardPage() {
 
             return (
               <>
-                <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
                     label="Votos estimados"
                     value={redMetricas.votosEstimados.toLocaleString("es-CO")}
@@ -486,7 +474,7 @@ export default function ClienteDashboardPage() {
                   />
                 </section>
 
-                <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-base font-semibold text-slate-900">Proyección electoral</p>
@@ -500,14 +488,14 @@ export default function ClienteDashboardPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className="h-full rounded-full bg-emerald-500 transition-all"
                       style={{ width: `${avance}%` }}
                     />
                   </div>
 
-                  <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <div className="mt-3 grid gap-2 md:grid-cols-3">
                     {activas.length === 0 ? (
                       <div className="md:col-span-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
                         No hay campañas activas. Activa una campaña para empezar a comparar la multired contra su meta electoral.
@@ -540,7 +528,7 @@ export default function ClienteDashboardPage() {
             );
           })()}
 
-          <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-base font-semibold text-slate-900">Centro de notificaciones</p>
@@ -554,7 +542,7 @@ export default function ClienteDashboardPage() {
               </button>
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="mt-3 grid gap-2 lg:grid-cols-3">
               {notificaciones.length === 0 ? (
                 <div className="lg:col-span-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center text-sm text-slate-400">
                   No hay notificaciones por ahora.
@@ -581,8 +569,8 @@ export default function ClienteDashboardPage() {
             </div>
           </section>
 
-          <section className="mt-5 grid gap-5 xl:grid-cols-[1.55fr_.85fr]">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className="mt-3 grid gap-3 xl:grid-cols-[1.3fr_1fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-base font-semibold text-slate-900">Resultados de la multired</p>
@@ -594,7 +582,7 @@ export default function ClienteDashboardPage() {
                   Próximamente
                 </span>
               </div>
-              <div className="mt-8 flex min-h-[250px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70">
+              <div className="mt-3 flex min-h-[110px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70">
                 <div className="max-w-sm px-6 text-center">
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
                     <Icon name="chart" />
@@ -609,11 +597,11 @@ export default function ClienteDashboardPage() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-base font-semibold text-slate-900">Resumen de cuenta</p>
               <p className="mt-1 text-xs text-slate-400">Información principal de tu campaña.</p>
 
-              <div className="mt-5 space-y-4">
+              <div className="mt-3 space-y-2">
                 <InfoLine label="Cliente" value={cliente?.nombreCliente || "—"} />
                 <InfoLine label="Campañas creadas" value={campanas.length ? campanas.map(c => c.nombreCampana).filter(Boolean).join(", ") : "Sin campañas"} />
                 <InfoLine label="Plan" value={cliente?.plan?.nombre || "—"} />
@@ -626,7 +614,7 @@ export default function ClienteDashboardPage() {
 
               <button
                 onClick={() => router.push("/perfil")}
-                className="mt-6 flex h-11 w-full items-center justify-center rounded-xl bg-slate-900 text-xs font-semibold text-white transition hover:bg-slate-800"
+                className="mt-3 flex h-9 w-full items-center justify-center rounded-xl bg-slate-900 text-xs font-semibold text-white transition hover:bg-slate-800"
               >
                 Ver perfil completo
               </button>
@@ -665,13 +653,13 @@ function MetricCard({
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{value}</p>
+          <p className="mt-1 text-2xl font-extrabold tracking-[-0.04em] text-slate-950">{value}</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
           <Icon name={icon} />
         </div>
       </div>
-      <p className="mt-3 text-xs text-slate-400">{foot}</p>
+      <p className="mt-1 text-[11px] text-slate-500">{foot}</p>
     </div>
   );
 }
