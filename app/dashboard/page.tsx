@@ -65,6 +65,7 @@ export default function ClienteDashboardPage() {
     integrantes: 0,
     lideres: 0,
     votosEstimados: 0,
+    votosRed: 0,
   });
 
   useEffect(() => {
@@ -142,6 +143,7 @@ export default function ClienteDashboardPage() {
         let integrantes = 0;
         let lideres = 0;
         let votosEstimados = 0;
+        let votosRed = 0;
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -155,12 +157,19 @@ export default function ClienteDashboardPage() {
             integrantes += registrados;
             // Estimación propia de cada líder: evita sumar subárboles varias veces.
             votosEstimados += activeNodes.reduce((sum, n) => sum + Number(n.data().estimacionVotos || 0), 0);
+            // Misma regla que Mi Red: un líder con multinodo aporta 1;
+            // sin multinodo aporta el estimado comprometido (mínimo 1).
+            // Cada nodo se suma una sola vez, independientemente de su profundidad.
+            votosRed += activeNodes.reduce((sum, n) => {
+              const data = n.data();
+              return sum + (data.multinodo === false ? Math.max(1, Number(data.estimacionVotos) || 1) : 1);
+            }, 0);
           } catch (networkError) {
             console.warn("No fue posible cargar la multired de campaña", camp.id, networkError);
           }
         }
 
-        setRedMetricas({ integrantes, lideres, votosEstimados });
+        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed });
         setLoading(false);
       } catch (error) {
         console.error(error);
@@ -439,39 +448,17 @@ export default function ClienteDashboardPage() {
 
           {(() => {
             const activas = campanas.filter(c => (c.estado || "inactiva") === "activa");
-            const metaTotal = activas.reduce((t, c) => t + Number(c.metaVotos || 0), 0);
-            const avance = metaTotal > 0
-              ? Math.min(100, (redMetricas.votosEstimados / metaTotal) * 100)
-              : 0;
-            const faltantes = Math.max(0, metaTotal - redMetricas.votosEstimados);
-
+            const estimadoTotal = redMetricas.votosEstimados;
+            const votosRed = redMetricas.votosRed;
+            const diferencia = estimadoTotal - votosRed;
+            const avance = estimadoTotal > 0 ? Math.min(100, (votosRed / estimadoTotal) * 100) : 0;
             return (
               <>
                 <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    label="Votos estimados"
-                    value={redMetricas.votosEstimados.toLocaleString("es-CO")}
-                    foot="Proyección alimentada por la multired"
-                    icon="chart"
-                  />
-                  <MetricCard
-                    label="Meta de votos"
-                    value={metaTotal.toLocaleString("es-CO")}
-                    foot={`${activas.length} campaña${activas.length === 1 ? "" : "s"} activa${activas.length === 1 ? "" : "s"}`}
-                    icon="levels"
-                  />
-                  <MetricCard
-                    label="Avance estimado"
-                    value={`${avance.toFixed(1)}%`}
-                    foot={metaTotal > 0 ? `Faltan ${faltantes.toLocaleString("es-CO")} votos estimados` : "Define una meta en la campaña"}
-                    icon="network"
-                  />
-                  <MetricCard
-                    label="Integrantes / líderes"
-                    value={`${redMetricas.integrantes} / ${redMetricas.lideres}`}
-                    foot="Estructura registrada en la multired"
-                    icon="users"
-                  />
+                  <MetricCard label="Estimado total" value={estimadoTotal.toLocaleString("es-CO")} foot="Suma de estimados manuales" icon="chart" />
+                  <MetricCard label="Votos de la multired" value={votosRed.toLocaleString("es-CO")} foot="Aportes de líderes y subniveles" icon="users" />
+                  <MetricCard label="Diferencia" value={diferencia.toLocaleString("es-CO")} foot="Estimado menos votos de la red" icon="levels" />
+                  <MetricCard label="Cumplimiento" value={`${avance.toFixed(1)}%`} foot="Votos de la red frente al estimado" icon="network" />
                 </section>
 
                 <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -479,12 +466,12 @@ export default function ClienteDashboardPage() {
                     <div>
                       <p className="text-base font-semibold text-slate-900">Proyección electoral</p>
                       <p className="mt-1 text-xs text-slate-400">
-                        Compara la estimación generada por la multired contra la meta configurada.
+                        Compara los votos acumulados de la multired con el estimado manual de los líderes.
                       </p>
                     </div>
                     <div className="text-left sm:text-right">
                       <p className="text-2xl font-semibold tracking-tight text-slate-950">{avance.toFixed(1)}%</p>
-                      <p className="text-xs text-slate-400">de la meta estimada</p>
+                      <p className="text-xs text-slate-400">del estimado manual</p>
                     </div>
                   </div>
 
@@ -498,7 +485,7 @@ export default function ClienteDashboardPage() {
                   <div className="mt-3 grid gap-2 md:grid-cols-3">
                     {activas.length === 0 ? (
                       <div className="md:col-span-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                        No hay campañas activas. Activa una campaña para empezar a comparar la multired contra su meta electoral.
+                        No hay campañas activas. Activa una campaña para consultar su proyección.
                       </div>
                     ) : (
                       activas.map(c => (
