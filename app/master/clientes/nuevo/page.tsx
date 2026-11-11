@@ -792,7 +792,7 @@ function NuevoClienteContent() {
             <button onClick={() => router.push("/master/dashboard")} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">←</button>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#1464d2]">Clientes</p>
-              <h1 className="text-xl font-semibold tracking-tight text-slate-950">{isEditing ? "Editar cliente" : "Crear nuevo cliente"}</h1>
+              <h1 className="text-xl font-bold tracking-tight text-[#15344f] sm:text-2xl">{isEditing ? "Editar cliente" : "Crear nuevo cliente"}</h1>
             </div>
           </div>
           <span className="hidden rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:block">{isEditing ? "Editando registro" : "Nuevo registro"}</span>
@@ -1293,7 +1293,7 @@ function NuevoClienteContent() {
             <button type="button" onClick={() => router.push("/master/clientes")} disabled={saving} className="h-12 shrink-0 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">
               Cancelar
             </button>
-            <button type="submit" disabled={saving || checking || loadingClient} aria-busy={saving} className="h-12 min-w-0 flex-1 rounded-xl bg-[#0b1b30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#102a49] disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-[260px] sm:flex-none">
+            <button type="submit" disabled={saving || checking || loadingClient} aria-busy={saving} className="h-12 min-w-0 flex-1 rounded-xl bg-[#a8d64f] px-5 text-sm font-bold text-[#20320b] shadow-[0_4px_14px_rgba(132,180,43,0.24)] ring-1 ring-[#91bd39] transition hover:bg-[#b9e56a] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-[260px] sm:flex-none">
               {saving ? (isEditing ? "Guardando…" : "Creando…") : (isEditing ? "Guardar cambios" : "Guardar cliente")}
             </button>
           </div>
@@ -1408,7 +1408,7 @@ function NuevoClienteContent() {
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><div className="mb-5"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><p className="mt-1 text-sm text-slate-500">{subtitle}</p></div>{children}</section>;
+  return <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><div className="mb-5 border-b border-slate-100 pb-4"><div className="flex items-start gap-3"><span aria-hidden="true" className="mt-1 h-7 w-1 shrink-0 rounded-full bg-[#a8d64f]" /><div><h2 className="text-lg font-bold tracking-tight text-[#15344f]">{title}</h2><p className="mt-1 text-sm leading-relaxed text-slate-500">{subtitle}</p></div></div></div>{children}</section>;
 }
 function Field({ label, value, onChange, type = "text", placeholder = "" }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
   return <div><label className="mb-2 block text-sm font-medium text-slate-700">{label}</label><input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="h-12 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400" /></div>;
