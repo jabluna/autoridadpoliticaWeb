@@ -124,8 +124,8 @@ export async function POST(request: NextRequest) {
       const raw = await emailResponse.text();
       // EmailJS can return a text error. Never echo links, tokens, or secrets.
       const sanitized = raw
-        .replace(/https?:\\/\\/[^\\s"'<>]+/gi, "[enlace oculto]")
-        .replace(/(?:accessToken|private[_ -]?key|token|password)\\s*[:=]\\s*[^\\s,;]+/gi, "[credencial oculta]")
+        .replaceAll("https://", "[enlace] ")
+        .replaceAll("http://", "[enlace] ")
         .slice(0, 240);
       console.error("EmailJS rejected send", { status: emailResponse.status, detail: sanitized });
       return NextResponse.json({
