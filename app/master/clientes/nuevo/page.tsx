@@ -799,7 +799,7 @@ function NuevoClienteContent() {
         </div>
       </header>
 
-      <form onSubmit={saveClient} className="mx-auto max-w-[1450px] px-4 py-7 sm:px-7">
+      <form onSubmit={saveClient} className="mx-auto max-w-[1450px] px-4 pt-5 pb-32 sm:px-7 sm:pt-7 sm:pb-28">
         <div className="grid gap-6 xl:grid-cols-[1fr_390px]">
           <div className="space-y-6">
             <Card title="Tipo de cliente" subtitle="Define quién será el titular de la cuenta.">
@@ -1281,10 +1281,22 @@ function NuevoClienteContent() {
             {error && <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
             {message && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-700">{message}</div>}
 
-            <button disabled={saving} className="h-14 w-full rounded-2xl bg-[#0b1b30] text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-[#102a49] disabled:opacity-50">
-              {saving ? (isEditing ? "Guardando cambios..." : "Creando cliente...") : (isEditing ? "Guardar cambios" : "Guardar nuevo cliente")}
-            </button>
+
           </aside>
+        </div>
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur-md sm:px-7">
+          <div className="mx-auto flex max-w-[1450px] items-center justify-between gap-3">
+            <div className="hidden min-w-0 sm:block">
+              <p className="text-sm font-semibold text-slate-800">{isEditing ? "Editar cliente" : "Nuevo cliente"}</p>
+              <p className="max-w-[36rem] truncate text-xs text-slate-500">{error ? "Revisa los campos indicados antes de continuar." : saving ? "Procesando, espera un momento…" : "Puedes guardar desde cualquier sección."}</p>
+            </div>
+            <button type="button" onClick={() => router.push("/master/clientes")} disabled={saving} className="h-12 shrink-0 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving || checking || loadingClient} aria-busy={saving} className="h-12 min-w-0 flex-1 rounded-xl bg-[#0b1b30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#102a49] disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-[260px] sm:flex-none">
+              {saving ? (isEditing ? "Guardando…" : "Creando…") : (isEditing ? "Guardar cambios" : "Guardar cliente")}
+            </button>
+          </div>
         </div>
       </form>
 
