@@ -97,9 +97,7 @@ export default function ClientesMasterPage() {
     if (!window.confirm(`¿Enviar instrucciones de acceso a ${c.email}? Se enviará también un correo seguro para establecer una nueva contraseña.`)) return;
     setActionId(c.id);setError("");setMessage("");
     try {
-      await sendPasswordResetEmail(auth,c.email.trim(),{
-        url:"https://autoridad-politica-web--autoridadpolitica.us-central1.hosted.app/login",
-      });
+      await sendPasswordResetEmail(auth, c.email.trim());
       const response=await fetch("https://api.emailjs.com/api/v1.0/email/send",{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
