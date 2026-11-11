@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { get, ref } from "firebase/database";
+import { rtdb } from "@/lib/firebase";
 
 export type CampanaInicial = {
  tipo: "municipal" | "departamental" | "nacional"; corporacion: string;
@@ -27,19 +29,25 @@ export default function RegistroCampana({nombre,initialName,onFinish,busy,submit
  const [draft,setDraft]=useState<Draft>({tipo:"municipal",corporacion:"alcaldia",nombreCampana:initialName,candidato:nombre,partidoMovimiento:"",lema:"",departamento:"",municipio:"",fechaEleccion:"",metaVotos:"",alcancePuestos:"todos"});
  const [selected,setSelected]=useState<string[]>([]);
  useEffect(()=>{
-  const controller=new AbortController();
+  let cancelled=false;
   setCatalogoLoading(true);
   setCatalogoUnavailable(false);
-  fetch("/api/public/catalogo-electoral",{signal:controller.signal})
-   .then(async response=>{if(!response.ok)throw new Error("HTTP "+response.status);return response.json();})
-   .then(data=>{
-     if(!data || typeof data!=="object" || Array.isArray(data) || Object.keys(data).length===0)throw new Error("Catálogo vacío");
-     setCatalogo(data);
-     setError("");
-   })
-   .catch(e=>{if(e.name!=="AbortError"){setCatalogoUnavailable(true);setError("No fue posible cargar el catálogo electoral. Puedes ingresar el territorio manualmente o reintentar.");}})
-   .finally(()=>{if(!controller.signal.aborted)setCatalogoLoading(false);});
-  return ()=>controller.abort();
+  const load=async()=>{
+   try {
+    // Leer la fuente original directamente desde Firebase RTDB, como el resto del proyecto.
+    // El endpoint de Firebase Admin puede fallar en localhost sin credenciales de servicio.
+    const snapshot=await get(ref(rtdb,"MUNICIPIOPUESTOS"));
+    if(!snapshot.exists())throw new Error("No existe MUNICIPIOPUESTOS en RTDB");
+    const data=snapshot.val();
+    if(!data || typeof data!=="object" || Array.isArray(data) || !Object.keys(data).length)throw new Error("Catálogo electoral vacío");
+    if(!cancelled){setCatalogo(data);setError("");}
+   }catch(e){
+    console.error("Error cargando MUNICIPIOPUESTOS desde Realtime Database:",e);
+    if(!cancelled){setCatalogoUnavailable(true);setError("No fue posible cargar el catálogo electoral desde Realtime Database. Comprueba permisos de lectura o reintenta.");}
+   }finally{if(!cancelled)setCatalogoLoading(false);}
+  };
+  void load();
+  return ()=>{cancelled=true;};
  },[retryCatalogo]);
  const departamentos=useMemo(()=>Object.keys(catalogo).sort(),[catalogo]);
  const municipios=useMemo(()=>Object.keys(catalogo[draft.departamento]||{}).sort(),[catalogo,draft.departamento]);
