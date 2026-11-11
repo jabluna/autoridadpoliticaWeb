@@ -81,7 +81,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Firebase Admin no pudo consultar el usuario de Authentication. Verifica credenciales y permisos." }, { status: 503 });
     }
     if (cliente.authUid && cliente.authUid !== user.uid) {
-      return NextResponse.json({ error: "La cuenta de acceso no corresponde al cliente." }, { status: 409 });
+      // No reemplazar automáticamente el UID: podría asociar un cliente a otra identidad.
+      console.warn("Client Auth UID mismatch", {
+        clienteId,
+        storedUid: String(cliente.authUid),
+        authUid: user.uid,
+        email,
+      });
+      return NextResponse.json({
+        error: "El cliente tiene un UID distinto al usuario registrado en Firebase Authentication. Comprueba en Firestore clientes/" + clienteId + " → authUid y en Authentication → Usuarios busca " + email + ". No se envió ningún enlace.",
+      }, { status: 409 });
     }
 
     const privateKey = process.env.EMAILJS_PRIVATE_KEY;
