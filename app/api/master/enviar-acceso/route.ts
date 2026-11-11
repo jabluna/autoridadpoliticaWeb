@@ -121,8 +121,16 @@ export async function POST(request: NextRequest) {
       cache: "no-store",
     });
     if (!emailResponse.ok) {
-      console.error("EmailJS error:", emailResponse.status);
-      return NextResponse.json({ error: "EmailJS rechazó el envío. Revisa el servicio y la plantilla." }, { status: 502 });
+      const raw = await emailResponse.text();
+      // EmailJS can return a text error. Never echo links, tokens, or secrets.
+      const sanitized = raw
+        .replace(/https?:\\/\\/[^\\s"'<>]+/gi, "[enlace oculto]")
+        .replace(/(?:accessToken|private[_ -]?key|token|password)\\s*[:=]\\s*[^\\s,;]+/gi, "[credencial oculta]")
+        .slice(0, 240);
+      console.error("EmailJS rejected send", { status: emailResponse.status, detail: sanitized });
+      return NextResponse.json({
+        error: `EmailJS rechazó el envío (HTTP ${emailResponse.status}): ${sanitized || "sin detalle"}`,
+      }, { status: 502 });
     }
     await clienteRef.update({
       "acceso.credencialesPendientesEnvio": false,
