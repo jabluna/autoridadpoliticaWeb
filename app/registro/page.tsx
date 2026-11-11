@@ -16,14 +16,56 @@ export default function RegistroPage() {
   const [verified, setVerified] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState("");
   const [verificationBusy, setVerificationBusy] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<"idle" | "available" | "used" | "existing">("idle");
+  const [emailNotice, setEmailNotice] = useState("");
   const field = (key: keyof typeof form, label: string, type = "text", required = true) => (
-    <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span><input required={required} type={type} value={form[key]} onChange={e => setForm(v => ({ ...v, [key]: e.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
+    <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span><input required={required} type={type} value={form[key]} onChange={e => { setForm(v => ({ ...v, [key]: e.target.value })); if(key === "email" || key === "password") { setEmailStatus("idle"); setEmailNotice(""); } }} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
   );
+
+  async function checkEmail() {
+    const email = form.email.trim().toLowerCase();
+    if (!email || !form.password) { setEmailNotice("Ingresa tu correo y contraseña para comprobar tu cuenta."); return false; }
+    setCheckingEmail(true); setEmailNotice(""); setError("");
+    try {
+      const user = auth.currentUser?.email?.toLowerCase() === email
+        ? auth.currentUser
+        : (await signInWithEmailAndPassword(auth, email, form.password)).user;
+      const token = await user.getIdToken();
+      const response = await fetch("/api/registro/estado-demo", { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+      if (!response.ok) throw new Error("No fue posible comprobar tu historial de demos. Inténtalo de nuevo.");
+      const data = await response.json();
+      if (data.used) {
+        setEmailStatus("used");
+        setEmailNotice(data.status === "pendiente" ? "Ya tienes una solicitud de demo pendiente. No necesitas registrarte nuevamente." : "Esta cuenta ya utilizó su única demo gratuita. No puede crear otra.");
+        return false;
+      }
+      setExistingAccount(true);
+      setEmailStatus("existing");
+      setEmailNotice("Cuenta existente validada. Puedes continuar con tu primera demo sin perder acceso a otras redes.");
+      return true;
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
+        if (existingAccount) {
+          setEmailNotice("No se pudo autenticar la cuenta. Comprueba el correo y su contraseña actual.");
+          return false;
+        }
+        setEmailStatus("available");
+        setEmailNotice("Si el correo no está registrado, crearemos tu cuenta al finalizar. Si ya existe, deberás usar tu contraseña actual.");
+        return true;
+      }
+      setEmailNotice(err instanceof Error ? err.message : "No fue posible comprobar el correo.");
+      return false;
+    } finally { setCheckingEmail(false); }
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (form.password.length < 8) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
-    setError(""); setWizard(true);
+    if (form.password.length < 8 && !existingAccount) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
+    if (emailStatus === "used") return;
+    const canContinue = await checkEmail();
+    if (canContinue) { setError(""); setWizard(true); }
   }
 
   async function finishRegistration(campanaInicial: CampanaInicial) {
@@ -43,7 +85,7 @@ export default function RegistroPage() {
           if ((creationError as { code?: string })?.code !== "auth/email-already-in-use") throw creationError;
           setExistingAccount(true);
           setWizard(false);
-          setError("Este correo ya está registrado. Puedes solicitar tu demo con tu contraseña actual, sin perder tus redes. Si ya usaste una demo, no podrás solicitar otra.");
+          setError("Este correo ya está registrado. Selecciona «Ya tengo cuenta» e ingresa tu contraseña actual para comprobar si tienes una demo disponible.");
           return;
         }
       }
@@ -98,14 +140,14 @@ export default function RegistroPage() {
     } finally { setVerificationBusy(false); }
   }
 
-  return <main className="min-h-screen bg-[#f3f7fb] px-5 py-12 text-slate-900">
-    <div className="mx-auto max-w-3xl">
+  return <main className="min-h-screen bg-[#f3f7fb] px-3 py-5 text-slate-900 sm:px-6 sm:py-8">
+    <div className="mx-auto max-w-6xl">
       <Link href="/" className="text-sm font-semibold text-blue-700">← Volver a Autoridad Política</Link>
-      <div className="mt-7 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5">
-        <div className="bg-[#123c60] px-6 py-9 text-white sm:px-10">
+      <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="bg-[#123c60] px-5 py-6 text-white sm:px-7 lg:flex lg:flex-col lg:justify-center lg:px-8">
           <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-100">Plan Free · Solicitud individual</span>
-          <h1 className="mt-5 text-3xl font-extrabold">Crea tu cuenta gratuita</h1>
-          <p className="mt-2 max-w-lg text-sm leading-6 text-slate-200">Solicita una única demo por cuenta para explorar Autoridad Política. El plan Free incluye 3 niveles de red y requiere verificar tu correo y la aprobación del administrador.</p>
+          <h1 className="mt-4 text-2xl font-extrabold sm:text-3xl">Tu campaña comienza aquí</h1>
+          <p className="mt-3 max-w-lg text-sm leading-6 text-slate-200">Registra tu campaña y activa tu plan gratuito de 3 niveles de red.</p><div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs lg:mt-10 lg:grid-cols-1 lg:text-left"><div className="rounded-xl bg-white/10 p-3">01 · Tus datos</div><div className="rounded-xl bg-white/10 p-3">02 · Campaña</div><div className="rounded-xl bg-white/10 p-3">03 · Verificación</div></div><p className="mt-5 text-xs leading-5 text-blue-100">Una demo por cuenta. Sujeto a verificación de correo y aprobación.</p>
         </div>
         {complete ? <div className="px-6 py-12 text-center sm:px-10">
           <div className="text-4xl">✓</div>
@@ -123,13 +165,28 @@ export default function RegistroPage() {
           <Link href="/" className="mt-6 inline-flex rounded-xl border px-5 py-3 text-sm font-bold text-slate-700">Volver al inicio</Link>
         </div> :
         wizard ? <RegistroCampana nombre={form.nombre} initialName={form.campana} busy={loading} submitError={error} onFinish={finishRegistration} /> :
-        <form onSubmit={submit} className="space-y-6 p-6 sm:p-10">
-          <div><h2 className="text-sm font-bold text-slate-900">Datos del usuario</h2><div className="mt-4 grid gap-4 sm:grid-cols-2">{field("nombre","Nombre completo *")}{field("identificacion","Documento de identidad *")}{field("telefono","Teléfono *","tel")}{field("email","Correo electrónico *","email")}</div></div>
-          <div className="border-t border-slate-100 pt-6"><h2 className="text-sm font-bold">Información de campaña</h2><div className="mt-4 grid gap-4 sm:grid-cols-2">{field("campana","Nombre de campaña (opcional)","text",false)}{field("ciudad","Ciudad (opcional)","text",false)}</div></div>
-          <div className="border-t border-slate-100 pt-6"><h2 className="text-sm font-bold">Seguridad</h2><div className="mt-4 max-w-sm">{field("password",existingAccount?"Contraseña actual de tu cuenta *":"Contraseña (nueva o actual si ya tienes cuenta) *","password")}</div><p className="mt-2 text-xs text-slate-500">Mínimo 8 caracteres para cuentas nuevas. Si ya tienes cuenta, usa tu contraseña actual; no se cambiará.</p><label className="mt-4 flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={existingAccount} onChange={e=>setExistingAccount(e.target.checked)} className="mt-1" /><span>Ya tengo cuenta (como candidato o integrante de otra red) y quiero solicitar mi única demo.</span></label></div>
-          <div className="rounded-xl bg-blue-50 p-4 text-xs leading-6 text-blue-900">Registro sujeto a verificación por correo y aprobación. <strong>Plan asignado:</strong> Free · 3 niveles de red · Sin costo. Solo registros individuales; las agencias deben solicitar otro tipo de cuenta.</div>
-          {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-          <div className="flex flex-wrap items-center justify-between gap-4"><p className="text-xs text-slate-500">¿Ya tienes cuenta? <Link href="/login" className="font-bold text-blue-700">Inicia sesión</Link></p><button disabled={loading} className="rounded-xl bg-[#126db2] px-7 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Registrando..." : "Continuar a mi campaña →"}</button></div>
+        <form onSubmit={submit} className="space-y-5 p-5 sm:p-7 lg:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-xl font-extrabold text-[#15344f]">Crear solicitud</h2><p className="mt-1 text-xs text-slate-500">Completa tus datos para continuar.</p></div><span className="rounded-full bg-lime-50 px-3 py-1.5 text-xs font-bold text-lime-800">Free · Sin costo</span></div>
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+            {field("nombre","Nombre completo *")}
+            {field("identificacion","Documento de identidad *")}
+            {field("telefono","Teléfono *","tel")}
+            {field("email","Correo electrónico *","email")}
+          </div>
+          <div className="grid gap-x-4 gap-y-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+            {field("campana","Nombre de campaña (opcional)","text",false)}
+            {field("ciudad","Ciudad (opcional)","text",false)}
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              {field("password",existingAccount?"Contraseña actual *":"Contraseña *","password")}
+              <button type="button" disabled={checkingEmail || !form.email || !form.password} onClick={() => void checkEmail()} className="h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-bold text-blue-800 disabled:opacity-50">{checkingEmail ? "Comprobando..." : "Comprobar correo"}</button>
+            </div>
+            <label className="mt-3 flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={existingAccount} onChange={e => {setExistingAccount(e.target.checked);setEmailStatus("idle");setEmailNotice("");}} className="mt-0.5" /><span>Ya tengo una cuenta y quiero solicitar mi primera demo.</span></label>
+            {emailNotice && <p role="status" className={`mt-3 rounded-xl p-3 text-sm ${emailStatus === "used" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-800"}`}>{emailNotice}</p>}
+          </div>
+          {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          <div className="flex flex-col-reverse items-stretch justify-between gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center"><p className="text-xs text-slate-500">¿Ya tienes acceso? <Link href="/login" className="font-bold text-blue-700">Iniciar sesión</Link></p><button disabled={loading || checkingEmail || emailStatus === "used"} className="rounded-xl bg-[#126db2] px-6 py-3 text-sm font-bold text-white disabled:opacity-50">{checkingEmail ? "Validando..." : "Continuar a mi campaña →"}</button></div>
         </form>}
       </div>
     </div>
