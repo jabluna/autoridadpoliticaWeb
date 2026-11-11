@@ -117,15 +117,16 @@ export default function ClientesMasterPage() {
   };
 
   const remove = async (c: Cliente) => {
-    const ok = window.confirm(`¿Eliminar a "${c.nombreCliente}" de la base de clientes?\n\nEsta acción elimina su ficha de Firestore. La cuenta de Authentication se conserva por seguridad administrativa.`);
+    const ok = window.confirm(
+      `¿Eliminar la ficha de cliente y campaña de "${c.nombreCliente}"?\n\nLa identidad en Firebase Authentication y el perfil de usuario se conservarán para evitar afectar otras participaciones. El acceso a esta campaña dejará de estar disponible.`
+    );
     if (!ok) return;
     try {
       setActionId(c.id); setError(""); setMessage("");
-      if (c.authUid) {
-        try { await deleteDoc(doc(db, "usuarios", c.authUid)); } catch {}
-      }
+      // Un UID representa a una persona, no exclusivamente a esta campaña.
+      // No eliminar usuarios/{authUid}: puede contener datos o vínculos compartidos.
       await deleteDoc(doc(db, "clientes", c.id));
-      setMessage("Cliente eliminado de la base de datos.");
+      setMessage("Cliente eliminado. Se conservaron su cuenta de Authentication y su perfil de usuario. Para ingresar a otra campaña necesitará una asignación válida.");
       await load();
     } catch (e) {
       console.error(e);
