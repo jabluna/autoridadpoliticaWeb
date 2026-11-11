@@ -18,7 +18,12 @@ export async function POST(request: NextRequest) {
     const bearer = request.headers.get("authorization") || "";
     if (!bearer.startsWith("Bearer ")) return NextResponse.json({ error: "Sesión requerida." }, { status: 401 });
     const { adminAuth, adminDb } = adminServices();
-    const decoded = await adminAuth.verifyIdToken(bearer.slice(7), true);
+    let decoded;
+    try { decoded = await adminAuth.verifyIdToken(bearer.slice(7), true); }
+    catch (e) {
+      console.error("Firebase Admin token validation failed:", e instanceof Error ? e.message : "Unknown");
+      return NextResponse.json({ error: "Firebase Admin no pudo validar la sesión. En localhost configura credenciales de servicio de Firebase (GOOGLE_APPLICATION_CREDENTIALS); en App Hosting verifica la cuenta de servicio." }, { status: 503 });
+    }
     const allowedEmails = (process.env.MASTER_ADMIN_EMAILS || "")
       .split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
     const allowed = decoded.master === true ||
@@ -30,7 +35,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Cliente inválido." }, { status: 400 });
     }
     const clienteRef = adminDb.collection("clientes").doc(clienteId);
-    const clienteSnap = await clienteRef.get();
+    let clienteSnap;
+    try { clienteSnap = await clienteRef.get(); }
+    catch (e) {
+      console.error("Firestore Admin read failed:", e instanceof Error ? e.message : "Unknown");
+      return NextResponse.json({ error: "Firebase Admin no pudo consultar Firestore. Verifica las credenciales de servicio." }, { status: 503 });
+    }
     if (!clienteSnap.exists) return NextResponse.json({ error: "Cliente no encontrado." }, { status: 404 });
     const cliente = clienteSnap.data()!;
     if (cliente.pago?.estado !== "aprobado") {
@@ -38,14 +48,24 @@ export async function POST(request: NextRequest) {
     }
     const email = String(cliente.email || "").trim().toLowerCase();
     if (!email) return NextResponse.json({ error: "Cliente sin correo." }, { status: 400 });
-    const user = await adminAuth.getUserByEmail(email);
+    let user;
+    try { user = await adminAuth.getUserByEmail(email); }
+    catch (e) {
+      console.error("Firebase user lookup failed:", e instanceof Error ? e.message : "Unknown");
+      return NextResponse.json({ error: "Firebase Admin no pudo consultar el usuario de Authentication. Verifica credenciales y permisos." }, { status: 503 });
+    }
     if (cliente.authUid && cliente.authUid !== user.uid) {
       return NextResponse.json({ error: "La cuenta de acceso no corresponde al cliente." }, { status: 409 });
     }
 
     const privateKey = process.env.EMAILJS_PRIVATE_KEY;
     if (!privateKey) return NextResponse.json({ error: "Falta EMAILJS_PRIVATE_KEY en el servidor." }, { status: 503 });
-    const resetLink = await adminAuth.generatePasswordResetLink(email);
+    let resetLink: string;
+    try { resetLink = await adminAuth.generatePasswordResetLink(email); }
+    catch (e) {
+      console.error("Firebase reset link generation failed:", e instanceof Error ? e.message : "Unknown");
+      return NextResponse.json({ error: "Firebase Admin no pudo generar el enlace de recuperación. Verifica credenciales y permisos de Firebase Authentication." }, { status: 503 });
+    }
     const emailResponse = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
