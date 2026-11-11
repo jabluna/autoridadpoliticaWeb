@@ -24,18 +24,27 @@ export async function POST(request: NextRequest) {
       console.error("Firebase Admin token validation failed:", e instanceof Error ? e.message : "Unknown");
       return NextResponse.json({ error: "Firebase Admin no pudo validar la sesión. En localhost configura credenciales de servicio de Firebase (GOOGLE_APPLICATION_CREDENTIALS); en App Hosting verifica la cuenta de servicio." }, { status: 503 });
     }
-    // La autorización se obtiene del registro Master, nunca de un correo fijo.
-    // El ID del documento coincide con el UID creado en Firebase Authentication.
-    const adminRecord = await adminDb.collection("administradoresMaster").doc(decoded.uid).get();
-    const adminData = adminRecord.data();
-    const isActiveMaster = adminRecord.exists &&
-      adminData?.rol === "master" &&
-      adminData?.estado === "activo" &&
-      typeof decoded.email === "string" &&
-      decoded.email.toLowerCase() === String(adminData?.email || "").trim().toLowerCase();
-    if (!isActiveMaster) {
+    // Validar contra administradoresMaster, incluyendo registros antiguos cuyo ID no es el UID.
+    const signedEmail = typeof decoded.email === "string" ? decoded.email.trim().toLowerCase() : "";
+    if (!signedEmail || decoded.email_verified !== true) {
+      return NextResponse.json({ error: "Tu cuenta Master necesita un correo verificado en Firebase Authentication." }, { status: 403 });
+    }
+    const adminCollection = adminDb.collection("administradoresMaster");
+    const byUid = await adminCollection.doc(decoded.uid).get();
+    const uidData = byUid.data();
+    let matchingAdmin = byUid.exists && String(uidData?.email || "").trim().toLowerCase() === signedEmail
+      ? uidData : undefined;
+    if (!matchingAdmin) {
+      const byEmail = await adminCollection.where("email", "==", signedEmail).limit(5).get();
+      matchingAdmin = byEmail.docs.map(d => d.data()).find(data =>
+        (!data.uid || data.uid === decoded.uid) &&
+        String(data.email || "").trim().toLowerCase() === signedEmail
+      );
+    }
+    if (!matchingAdmin || matchingAdmin.estado === "inactivo" || matchingAdmin.estado === "suspendido" ||
+        (matchingAdmin.rol && matchingAdmin.rol !== "master")) {
       return NextResponse.json({
-        error: "Tu cuenta no figura como administrador Master activo. Verifica tu registro en Master → Administradores.",
+        error: "No se encontró un registro Master activo asociado a tu sesión. Revisa el correo y estado en Master → Administradores.",
       }, { status: 403 });
     }
 
