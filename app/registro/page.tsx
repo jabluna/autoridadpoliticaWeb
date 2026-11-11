@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, reload } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import RegistroCampana, { type CampanaInicial } from "./RegistroCampana";
 
 export default function RegistroPage() {
@@ -13,6 +13,9 @@ export default function RegistroPage() {
   const [complete, setComplete] = useState(false);
   const [wizard, setWizard] = useState(false);
   const [existingAccount, setExistingAccount] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState("");
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const field = (key: keyof typeof form, label: string, type = "text", required = true) => (
     <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span><input required={required} type={type} value={form[key]} onChange={e => setForm(v => ({ ...v, [key]: e.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
   );
@@ -55,8 +58,12 @@ export default function RegistroPage() {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "No fue posible registrar la solicitud.");
-      if (!user.emailVerified) await sendEmailVerification(user);
+      setVerified(user.emailVerified);
       setComplete(true);
+      if (!user.emailVerified) {
+        try { await sendEmailVerification(user); setVerificationMessage("Enlace de verificación enviado a " + email + ". Revisa Spam."); }
+        catch { setVerificationMessage("Solicitud guardada, pero falló el envío del enlace. Pulsa Reenviar."); }
+      }
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       setError(code === "auth/invalid-credential" || code === "auth/wrong-password"
@@ -64,6 +71,31 @@ export default function RegistroPage() {
         : code === "auth/weak-password" ? "Elige una contraseña más segura."
         : err instanceof Error ? err.message : "No fue posible completar el registro.");
     } finally { setLoading(false); }
+  }
+
+
+  async function verificationAction(resend: boolean) {
+    setVerificationBusy(true);
+    setVerificationMessage("");
+    try {
+      let user = auth.currentUser;
+      if (!user || user.email?.toLowerCase() !== form.email.trim().toLowerCase()) {
+        user = (await signInWithEmailAndPassword(auth, form.email.trim().toLowerCase(), form.password)).user;
+      }
+      await reload(user);
+      if (user.emailVerified) {
+        setVerified(true);
+        setVerificationMessage("Correo verificado. El Master ya puede aprobar la solicitud.");
+      } else if (resend) {
+        await sendEmailVerification(user);
+        setVerificationMessage("Enlace enviado. Revisa la bandeja de entrada y Spam.");
+      } else {
+        setVerificationMessage("Aún no se ha verificado. Abre el enlace del correo y vuelve a comprobar.");
+      }
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      setVerificationMessage(code === "auth/too-many-requests" ? "Demasiados intentos. Espera unos minutos." : "No fue posible comprobar o enviar el enlace. Intenta nuevamente.");
+    } finally { setVerificationBusy(false); }
   }
 
   return <main className="min-h-screen bg-[#f3f7fb] px-5 py-12 text-slate-900">
@@ -75,7 +107,21 @@ export default function RegistroPage() {
           <h1 className="mt-5 text-3xl font-extrabold">Crea tu cuenta gratuita</h1>
           <p className="mt-2 max-w-lg text-sm leading-6 text-slate-200">Solicita una única demo por cuenta para explorar Autoridad Política. El plan Free incluye 3 niveles de red y requiere verificar tu correo y la aprobación del administrador.</p>
         </div>
-        {complete ? <div className="px-6 py-12 text-center sm:px-10"><div className="text-4xl">✓</div><h2 className="mt-4 text-2xl font-bold">Solicitud recibida</h2><p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600">Tu solicitud de demo fue registrada. Si tu correo aún no estaba verificado, te enviamos un enlace de verificación. La aprobación del Master sigue siendo necesaria. Conservas el acceso a las redes a las que ya perteneces.</p><Link href="/" className="mt-6 inline-flex rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Volver al inicio</Link></div> :
+        {complete ? <div className="px-6 py-12 text-center sm:px-10">
+          <div className="text-4xl">✓</div>
+          <h2 className="mt-4 text-2xl font-bold">Solicitud recibida</h2>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600">Tu demo quedó pendiente de aprobación Master. Conservas el acceso a otras redes.</p>
+          <div className="mx-auto mt-6 max-w-md rounded-2xl border border-blue-100 bg-blue-50 p-5 text-left">
+            <p className="font-bold text-[#123c60]">{verified ? "Correo verificado" : "Verifica tu correo para habilitar la aprobación"}</p>
+            <p className="mt-2 text-sm text-slate-600">{verified ? "Tu dirección ya está confirmada." : "Abre el enlace enviado a " + form.email + ". Revisa también Spam."}</p>
+            {verificationMessage && <p role="status" className="mt-3 text-sm text-blue-900">{verificationMessage}</p>}
+            {!verified && <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" disabled={verificationBusy} onClick={() => void verificationAction(true)} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">Reenviar verificación</button>
+              <button type="button" disabled={verificationBusy} onClick={() => void verificationAction(false)} className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-800 disabled:opacity-50">Ya verifiqué mi correo</button>
+            </div>}
+          </div>
+          <Link href="/" className="mt-6 inline-flex rounded-xl border px-5 py-3 text-sm font-bold text-slate-700">Volver al inicio</Link>
+        </div> :
         wizard ? <RegistroCampana nombre={form.nombre} initialName={form.campana} busy={loading} submitError={error} onFinish={finishRegistration} /> :
         <form onSubmit={submit} className="space-y-6 p-6 sm:p-10">
           <div><h2 className="text-sm font-bold text-slate-900">Datos del usuario</h2><div className="mt-4 grid gap-4 sm:grid-cols-2">{field("nombre","Nombre completo *")}{field("identificacion","Documento de identidad *")}{field("telefono","Teléfono *","tel")}{field("email","Correo electrónico *","email")}</div></div>
