@@ -24,27 +24,35 @@ export async function POST(request: NextRequest) {
       console.error("Firebase Admin token validation failed:", e instanceof Error ? e.message : "Unknown");
       return NextResponse.json({ error: "Firebase Admin no pudo validar la sesión. En localhost configura credenciales de servicio de Firebase (GOOGLE_APPLICATION_CREDENTIALS); en App Hosting verifica la cuenta de servicio." }, { status: 503 });
     }
-    // Validar contra administradoresMaster, incluyendo registros antiguos cuyo ID no es el UID.
+    // La identidad se verifica con Firebase Auth; el correo verificado identifica al administrador.
+    // Los documentos históricos pueden tener UID o correo diferentes a su ID de Firestore.
     const signedEmail = typeof decoded.email === "string" ? decoded.email.trim().toLowerCase() : "";
     if (!signedEmail || decoded.email_verified !== true) {
-      return NextResponse.json({ error: "Tu cuenta Master necesita un correo verificado en Firebase Authentication." }, { status: 403 });
+      return NextResponse.json({ error: "El correo de tu sesión Master no está verificado en Firebase Authentication." }, { status: 403 });
     }
     const adminCollection = adminDb.collection("administradoresMaster");
     const byUid = await adminCollection.doc(decoded.uid).get();
-    const uidData = byUid.data();
-    let matchingAdmin = byUid.exists && String(uidData?.email || "").trim().toLowerCase() === signedEmail
-      ? uidData : undefined;
+    const byEmail = await adminCollection.where("email", "==", signedEmail).limit(10).get();
+    const candidates = [byUid, ...byEmail.docs];
+    const matchingAdmin = candidates.map(d => d.exists ? d.data() : undefined).find(data =>
+      data &&
+      String(data.email || "").trim().toLowerCase() === signedEmail &&
+      data.estado === "activo" &&
+      data.rol === "master"
+    );
     if (!matchingAdmin) {
-      const byEmail = await adminCollection.where("email", "==", signedEmail).limit(5).get();
-      matchingAdmin = byEmail.docs.map(d => d.data()).find(data =>
-        (!data.uid || data.uid === decoded.uid) &&
-        String(data.email || "").trim().toLowerCase() === signedEmail
-      );
-    }
-    if (!matchingAdmin || matchingAdmin.estado === "inactivo" || matchingAdmin.estado === "suspendido" ||
-        (matchingAdmin.rol && matchingAdmin.rol !== "master")) {
+      const reason = !byUid.exists && byEmail.empty
+        ? "No existe un administrador con el correo de tu sesión."
+        : "El registro encontrado no coincide con el correo, rol master y estado activo.";
+      console.warn("Master access denied", {
+        authenticatedUid: decoded.uid,
+        authenticatedEmail: signedEmail,
+        uidDocumentExists: byUid.exists,
+        emailDocumentCount: byEmail.size,
+        reason,
+      });
       return NextResponse.json({
-        error: "No se encontró un registro Master activo asociado a tu sesión. Revisa el correo y estado en Master → Administradores.",
+        error: `Acceso denegado: ${reason} Sesión autenticada: ${signedEmail}. Comprueba que esa misma cuenta aparezca en Master → Administradores.`,
       }, { status: 403 });
     }
 
