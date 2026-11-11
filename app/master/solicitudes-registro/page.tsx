@@ -30,7 +30,19 @@ export default function SolicitudesRegistroPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => onAuthStateChanged(auth, u => { if (!u) router.replace("/master/login"); else void load(); }), [router]);
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      if (!user) { router.replace("/master/login"); return; }
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch("/api/master/verificar-acceso", { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+        if (!response.ok) { router.replace(response.status === 403 ? "/login" : "/master/login"); return; }
+        if (active) void load();
+      } catch { router.replace("/master/login"); }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [router]);
 
   const filtered = useMemo(() => rows.filter(r => {
     const match = [r.nombreCliente, r.email, r.identificacion, r.telefono, r.nombreCampana].some(v => String(v || "").toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
