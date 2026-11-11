@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
       const clientRef = db.collection("clientes").doc(uid);
       const userRef = db.doc(`usuarios/${uid}`);
       const [existingClient, existingUser] = await Promise.all([tx.get(clientRef), tx.get(userRef)]);
-      if (existingClient.exists || existingUser.exists) throw new Error("La cuenta ya está asociada a un cliente.");
+      if (existingClient.exists) throw new Error("Ya existe un cliente con este UID.");
+      if (existingUser.exists && !["red_usuario", "cliente_admin"].includes(String(existingUser.get("rol")))) throw new Error("El perfil existente no permite una demo.");
       tx.create(clientRef, {
         authUid: uid, tipoCliente: "candidato", nombreCliente: data.nombreCliente,
         identificacion: data.identificacion, nombreCampana: data.nombreCampana || "",
@@ -52,11 +53,16 @@ export async function POST(req: NextRequest) {
         pago: { estado: "aprobado", reciboURL: "", valorAprobado: 0 },
         creadoEn: FieldValue.serverTimestamp(),
       });
-      tx.create(userRef, {
-        uid, clienteId: uid, email: user.email, nombre: data.nombreCliente,
-        rol: "cliente_admin", tipoCliente: "candidato", estado: "activo",
-        creadoEn: FieldValue.serverTimestamp(),
-      });
+      if (existingUser.exists) {
+        // No sobrescribir rol, clienteId ni nodoId: pueden pertenecer a otra red.
+        tx.update(userRef, { demoClienteId: uid, actualizadoEn: FieldValue.serverTimestamp() });
+      } else {
+        tx.create(userRef, {
+          uid, clienteId: uid, email: user.email, nombre: data.nombreCliente,
+          rol: "cliente_admin", tipoCliente: "candidato", estado: "activo",
+          creadoEn: FieldValue.serverTimestamp(),
+        });
+      }
       if (data.campanaInicial && typeof data.campanaInicial === "object") {
         const initial = data.campanaInicial as Record<string, unknown>;
         const validCorporations = ["edil", "concejo", "alcaldia", "asamblea", "gobernacion", "presidencia"];
@@ -81,6 +87,7 @@ export async function POST(req: NextRequest) {
         });
       }
       tx.update(requestRef, { estado: "aprobado", clienteId: uid, revisadoPor: token.uid, revisadoEn: FieldValue.serverTimestamp() });
+      tx.set(db.doc(`beneficiosDemo/${uid}`), { uid, email: user.email, estado: "aprobada", actualizadoEn: FieldValue.serverTimestamp() }, { merge: true });
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
