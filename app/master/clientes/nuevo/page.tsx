@@ -8,6 +8,25 @@ import { deleteApp, initializeApp } from "firebase/app";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db, storage, firebaseConfig } from "@/lib/firebase";
 
+const EMAILJS_SERVICE_ID = "service_j9mgk6s";
+const EMAILJS_TEMPLATE_ID = "template_tkxpukx";
+const EMAILJS_PUBLIC_KEY = "cOIC7T0gD-Ft9gCNh";
+const LOGIN_URL = "https://autoridad-politica-web--autoridadpolitica.us-central1.hosted.app/login";
+
+async function enviarAccesoEmailJS(nombre: string, email: string, password: string) {
+  const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      template_params: { nombre, email, password, to_email: email, reply_to: email, login_url: LOGIN_URL },
+    }),
+  });
+  if (!response.ok) throw new Error(`EmailJS: ${response.status} ${(await response.text()).slice(0, 200)}`);
+}
+
 type PrecioCampana = {
   id: string;
   nombre: string;
@@ -714,7 +733,26 @@ function NuevoClienteContent() {
 
       await signOut(secondaryAuth);
 
-      setMessage("Cliente y acceso creados correctamente. Las credenciales quedan listas para el futuro envío por EmailJS.");
+      let mensajeAcceso = "Cliente y acceso creados correctamente. El correo se enviará al aprobar el pago.";
+      if (estadoPago === "aprobado") {
+        try {
+          await enviarAccesoEmailJS(form.nombreCliente.trim(), form.email.trim().toLowerCase(), form.passwordTemporal);
+          await updateDoc(doc(db, "clientes", temp.id), {
+            "acceso.credencialesPendientesEnvio": false,
+            "acceso.emailEnviadoEn": serverTimestamp(),
+            "acceso.estadoEmail": "enviado",
+          });
+          mensajeAcceso = "Cliente creado y correo de acceso enviado correctamente por EmailJS.";
+        } catch (emailError) {
+          console.error("No se pudo enviar el correo de acceso:", emailError);
+          await updateDoc(doc(db, "clientes", temp.id), {
+            "acceso.estadoEmail": "error",
+            "acceso.credencialesPendientesEnvio": true,
+          }).catch(console.error);
+          mensajeAcceso = "Cliente creado correctamente, pero EmailJS no pudo enviar el correo. Verifica la configuración del servicio y la plantilla.";
+        }
+      }
+      setMessage(mensajeAcceso);
       setLogo(null);
       setLogoPreview("");
       setReciboPago(null);
