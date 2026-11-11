@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   collection, deleteDoc, doc, getDocs, orderBy, query,
   serverTimestamp, updateDoc
@@ -94,33 +94,25 @@ export default function ClientesMasterPage() {
 
   const enviarAcceso = async (c: Cliente) => {
     if (c.pago?.estado !== "aprobado") {setError("Solo puedes enviar accesos desde clientes con pago aprobado.");return;}
-    if (!window.confirm(`¿Enviar instrucciones de acceso a ${c.email}? Se enviará también un correo seguro para establecer una nueva contraseña.`)) return;
+    if (!window.confirm(`¿Enviar instrucciones de acceso a ${c.email}? El correo incluirá un enlace seguro para establecer su contraseña.`)) return;
     setActionId(c.id);setError("");setMessage("");
     try {
-      await sendPasswordResetEmail(auth, c.email.trim());
-      const response=await fetch("https://api.emailjs.com/api/v1.0/email/send",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          service_id:"service_j9mgk6s",
-          template_id:"template_tkxpukx",
-          user_id:"cOIC7T0gD-Ft9gCNh",
-          template_params:{
-            nombre:c.nombreCliente,email:c.email,to_email:c.email,
-            password:"Por seguridad, establece una nueva contraseña mediante el correo de recuperación enviado por Firebase.",
-          },
-        }),
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("La sesión expiró.");
+      const response = await fetch("/api/master/enviar-acceso", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ clienteId: c.id }),
       });
-      if(!response.ok)throw new Error(`EmailJS: ${response.status}`);
-      await updateDoc(doc(db,"clientes",c.id),{
-        "acceso.credencialesPendientesEnvio":false,
-        "acceso.estadoEmail":"enviado",
-        "acceso.emailEnviadoEn":serverTimestamp(),
-      });
-      setMessage(`Instrucciones enviadas a ${c.email}. El cliente recibirá un correo adicional para configurar su contraseña.`);
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "No fue posible enviar el correo.");
+      }
+      setMessage(`Correo único de acceso enviado a ${c.email}, con el enlace para establecer la contraseña.`);
       await load();
     }catch(e){
       console.error(e);
-      setError("No se completó el envío. Revisa EmailJS y la configuración de correos de Firebase.");
+      setError(e instanceof Error ? e.message : "No se completó el envío.");
     }finally{setActionId(null);}
   };
 
