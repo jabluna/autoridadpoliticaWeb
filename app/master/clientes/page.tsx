@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
 import {
   collection, deleteDoc, doc, getDocs, orderBy, query,
   serverTimestamp, updateDoc
@@ -26,6 +26,8 @@ type Cliente = {
   nivelesRed?: number;
   logoURL?: string;
   estado?: "activo" | "inactivo";
+  pago?: { estado?: "pendiente" | "aprobado" | "rechazado" };
+  acceso?: { estadoEmail?: string; emailEnviadoEn?: unknown; credencialesPendientesEnvio?: boolean };
 };
 
 export default function ClientesMasterPage() {
@@ -88,6 +90,40 @@ export default function ClientesMasterPage() {
     } finally {
       setActionId(null);
     }
+  };
+
+  const enviarAcceso = async (c: Cliente) => {
+    if (c.pago?.estado !== "aprobado") {setError("Solo puedes enviar accesos desde clientes con pago aprobado.");return;}
+    if (!window.confirm(`¿Enviar instrucciones de acceso a ${c.email}? Se enviará también un correo seguro para establecer una nueva contraseña.`)) return;
+    setActionId(c.id);setError("");setMessage("");
+    try {
+      await sendPasswordResetEmail(auth,c.email.trim(),{
+        url:"https://autoridad-politica-web--autoridadpolitica.us-central1.hosted.app/login",
+      });
+      const response=await fetch("https://api.emailjs.com/api/v1.0/email/send",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          service_id:"service_j9mgk6s",
+          template_id:"template_tkxpukx",
+          user_id:"cOIC7T0gD-Ft9gCNh",
+          template_params:{
+            nombre:c.nombreCliente,email:c.email,to_email:c.email,
+            password:"Por seguridad, establece una nueva contraseña mediante el correo de recuperación enviado por Firebase.",
+          },
+        }),
+      });
+      if(!response.ok)throw new Error(`EmailJS: ${response.status}`);
+      await updateDoc(doc(db,"clientes",c.id),{
+        "acceso.credencialesPendientesEnvio":false,
+        "acceso.estadoEmail":"enviado",
+        "acceso.emailEnviadoEn":serverTimestamp(),
+      });
+      setMessage(`Instrucciones enviadas a ${c.email}. El cliente recibirá un correo adicional para configurar su contraseña.`);
+      await load();
+    }catch(e){
+      console.error(e);
+      setError("No se completó el envío. Revisa EmailJS y la configuración de correos de Firebase.");
+    }finally{setActionId(null);}
   };
 
   const remove = async (c: Cliente) => {
@@ -192,7 +228,7 @@ export default function ClientesMasterPage() {
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${(c.estado || "activo") === "activo" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{c.estado || "activo"}</span></td>
                     <td className="px-5 py-4">
                       <div className="flex gap-2">
-                        <button onClick={() => router.push(`/master/clientes/nuevo?id=${encodeURIComponent(c.id)}`)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Editar</button>
+                        <button disabled={actionId===c.id || c.pago?.estado!=="aprobado"} title={c.pago?.estado!=="aprobado"?"Requiere pago aprobado":"Enviar instrucciones de acceso"} onClick={()=>void enviarAcceso(c)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">{actionId===c.id?"Enviando...":"✉ Enviar acceso"}</button><button onClick={() => router.push(`/master/clientes/nuevo?id=${encodeURIComponent(c.id)}`)}  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Editar</button>
                         <button disabled={actionId === c.id} onClick={() => toggle(c)} className={`rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-50 ${(c.estado || "activo") === "activo" ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}>{actionId === c.id ? "..." : (c.estado || "activo") === "activo" ? "Inactivar" : "Activar"}</button>
                         <button disabled={actionId === c.id} onClick={() => remove(c)} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">Eliminar</button>
                       </div>
