@@ -107,15 +107,17 @@ export default function MasterDashboardPage() {
   const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        router.replace("/master/login");
-        return;
-      }
-      setUser(currentUser);
-      setChecking(false);
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async currentUser => {
+      if (!currentUser) { router.replace("/master/login"); return; }
+      try {
+        const token = await currentUser.getIdToken();
+        const response = await fetch("/api/master/verificar-acceso", { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+        if (!response.ok) { router.replace(response.status === 403 ? "/login" : "/master/login"); return; }
+        if (active) { setUser(currentUser); setChecking(false); }
+      } catch { router.replace("/master/login"); }
     });
-    return unsubscribe;
+    return () => { active = false; unsubscribe(); };
   }, [router]);
 
   const logout = async () => {
