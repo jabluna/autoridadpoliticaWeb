@@ -24,17 +24,33 @@ export default function MasterLoginPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        router.replace("/master/dashboard");
-        return;
-      }
-
-      setCheckingSession(false);
+  const checkMaster = async (user: import("firebase/auth").User) => {
+    const token = await user.getIdToken();
+    const response = await fetch("/api/master/verificar-acceso", {
+      headers: { Authorization: "Bearer " + token },
+      cache: "no-store",
     });
+    if (!response.ok) throw new Error(response.status === 403
+      ? "Acceso exclusivo para administradores Master. Los candidatos y líderes deben ingresar por /login."
+      : "No fue posible validar los permisos Master. Inténtalo nuevamente.");
+    return true;
+  };
 
-    return unsubscribe;
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async currentUser => {
+      if (!currentUser) { if (active) setCheckingSession(false); return; }
+      try {
+        await checkMaster(currentUser);
+        if (active) router.replace("/master/dashboard");
+      } catch {
+        if (active) {
+          setError("Esta cuenta no tiene acceso Master. Ingresa por el acceso normal de candidatos y líderes.");
+          setCheckingSession(false);
+        }
+      }
+    });
+    return () => { active = false; unsubscribe(); };
   }, [router]);
 
   const clearMessages = () => {
@@ -81,11 +97,12 @@ export default function MasterLoginPage() {
 
     try {
       setLoading(true);
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await checkMaster(credential.user);
       router.replace("/master/dashboard");
     } catch (err: unknown) {
       console.error(err);
-      setError(getAuthErrorMessage(err));
+      setError(err instanceof Error && err.message.startsWith("Acceso exclusivo") ? err.message : getAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -99,7 +116,8 @@ export default function MasterLoginPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
 
-      await signInWithPopup(auth, provider);
+      const credential = await signInWithPopup(auth, provider);
+      await checkMaster(credential.user);
       router.replace("/master/dashboard");
     } catch (err: unknown) {
       const code =
@@ -109,7 +127,7 @@ export default function MasterLoginPage() {
 
       if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {
         console.error(err);
-        setError(getAuthErrorMessage(err));
+        setError(err instanceof Error && err.message.startsWith("Acceso exclusivo") ? err.message : getAuthErrorMessage(err));
       }
     } finally {
       setGoogleLoading(false);
