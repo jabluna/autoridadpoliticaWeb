@@ -24,11 +24,20 @@ export async function POST(request: NextRequest) {
       console.error("Firebase Admin token validation failed:", e instanceof Error ? e.message : "Unknown");
       return NextResponse.json({ error: "Firebase Admin no pudo validar la sesión. En localhost configura credenciales de servicio de Firebase (GOOGLE_APPLICATION_CREDENTIALS); en App Hosting verifica la cuenta de servicio." }, { status: 503 });
     }
-    const allowedEmails = (process.env.MASTER_ADMIN_EMAILS || "")
-      .split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
-    const allowed = decoded.master === true ||
-      (decoded.email_verified === true && !!decoded.email && allowedEmails.includes(decoded.email.toLowerCase()));
-    if (!allowed) return NextResponse.json({ error: "No autorizado como Master. Configura MASTER_ADMIN_EMAILS en el servidor." }, { status: 403 });
+    // La autorización se obtiene del registro Master, nunca de un correo fijo.
+    // El ID del documento coincide con el UID creado en Firebase Authentication.
+    const adminRecord = await adminDb.collection("administradoresMaster").doc(decoded.uid).get();
+    const adminData = adminRecord.data();
+    const isActiveMaster = adminRecord.exists &&
+      adminData?.rol === "master" &&
+      adminData?.estado === "activo" &&
+      typeof decoded.email === "string" &&
+      decoded.email.toLowerCase() === String(adminData?.email || "").trim().toLowerCase();
+    if (!isActiveMaster) {
+      return NextResponse.json({
+        error: "Tu cuenta no figura como administrador Master activo. Verifica tu registro en Master → Administradores.",
+      }, { status: 403 });
+    }
 
     const { clienteId } = await request.json() as { clienteId?: string };
     if (typeof clienteId !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(clienteId)) {
