@@ -17,13 +17,34 @@ export async function POST(req: NextRequest) {
     const auth = getAuth(app);
     const db = getFirestore(app);
     const token = await auth.verifyIdToken(bearer.slice(7), true);
-    const master = await db.doc(`administradoresMaster/${token.uid}`).get();
-    const isOwner = Boolean(process.env.MASTER_OWNER_UID) && token.uid === process.env.MASTER_OWNER_UID;
-    const isAdmin = master.exists && master.get("estado") === "activo" && master.get("rol") === "master";
-    if (!isOwner && !isAdmin) {
-      return NextResponse.json({ error: "No tienes permisos de administrador Master." }, { status: 403 });
+    const signedEmail = String(token.email || "").trim().toLowerCase();
+    if (!signedEmail || token.email_verified !== true) {
+      return NextResponse.json({ error: "El correo de la sesión Master debe estar verificado." }, { status: 403 });
     }
-    const { uid, action } = await req.json() as { uid?: string; action?: string };
+    const [master, byEmail] = await Promise.all([
+      db.doc(`administradoresMaster/${token.uid}`).get(),
+      db.collection("administradoresMaster").where("email", "==", signedEmail).limit(10).get(),
+    ]);
+    const isOwner = Boolean(process.env.MASTER_OWNER_UID) && token.uid === process.env.MASTER_OWNER_UID;
+    const isAdmin = [master, ...byEmail.docs].some(d => d.exists &&
+      d.get("rol") === "master" && d.get("estado") === "activo" &&
+      String(d.get("email") || "").trim().toLowerCase() === signedEmail);
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json({ error: "No tienes permisos de administrador Master. Comprueba el correo de la sesión." }, { status: 403 });
+    }
+    const { uid, action, uids } = await req.json() as { uid?: string; action?: string; uids?: string[] };
+    if (action === "eliminar") {
+      const ids = Array.isArray(uids) ? uids : uid ? [uid] : [];
+      const unique = [...new Set(ids)];
+      if (!unique.length || unique.length > 400 || unique.some(id => typeof id !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(id))) {
+        return NextResponse.json({ error: "Selecciona entre 1 y 400 solicitudes válidas." }, { status: 400 });
+      }
+      const batch = db.batch();
+      for (const id of unique) batch.delete(db.doc(`solicitudesRegistro/${id}`));
+      await batch.commit();
+      // No eliminar Authentication, usuarios, clientes ni beneficiosDemo.
+      return NextResponse.json({ ok: true, eliminadas: unique.length });
+    }
     if (!uid || !["aprobar", "rechazar"].includes(action || "")) return NextResponse.json({ error: "Solicitud inválida." }, { status: 400 });
     const user = await auth.getUser(uid);
     const requestRef = db.doc(`solicitudesRegistro/${uid}`);
