@@ -20,20 +20,32 @@ export async function GET(request: NextRequest) {
     const [client, campaign] = await Promise.all([db.doc(`clientes/${clienteId}`).get(), db.doc(`clientes/${clienteId}/campanas/${campanaId}`).get()]);
     if (!client.exists || client.get("estado") === "inactivo" || client.get("planActivo") === false || !campaign.exists) return fail("Campaña no autorizada.", 403);
     const links = await db.collection("vinculacionesCampana").where("clienteReceptorId", "==", clienteId).limit(150).get();
-    const selected = links.docs.filter(d => d.get("campanaReceptoraId") === campanaId && d.get("estado") === "activa");
+    const selected = links.docs.filter(d => d.get("campanaReceptoraId") === campanaId && ["activa", "retirada"].includes(String(d.get("estado"))));
     const rows = await Promise.all(selected.map(async link => {
       const ownerUid = String(link.get("propietarioUid") || "");
       const ownerClientId = String(link.get("clientePropietarioId") || "");
       const category = String(link.get("categoria") || "");
+      const withdrawn = link.get("estado") === "retirada";
       const [owner, client, reservation, invite] = await Promise.all([
         db.doc(`usuarios/${ownerUid}`).get(), db.doc(`clientes/${ownerClientId}`).get(),
         db.doc(`vinculacionesPorUsuario/${ownerUid}/categorias/${category}`).get(),
         db.doc(`invitacionesRed/${link.id}`).get(),
       ]);
+      if (!invite.exists || invite.get("destinatarioUid") !== ownerUid) return null;
+      if (withdrawn) {
+        // La ficha sombra no depende de que la persona conserve su cuenta o categoría reservada.
+        if (invite.get("estado") !== "retirada") return null;
+        return {
+          id: link.id, nombre: String(link.get("nombreHistorico") || invite.get("destinatarioNombre") || "Red desvinculada"),
+          categoria: category, estado: "retirada", accesoCompartido: false, red: [],
+          retiradaEn: link.get("retiradaEn")?.toDate?.()?.toISOString?.(),
+          aviso: "El propietario se retiró. Sin acceso a su estructura ni aporte electoral."
+        };
+      }
       if (!owner.exists || owner.get("estado") === "inactivo" || owner.get("clienteId") !== ownerClientId ||
           !client.exists || client.get("estado") === "inactivo" ||
           !reservation.exists || reservation.get("estado") !== "activa" || reservation.get("invitacionId") !== link.id ||
-          !invite.exists || invite.get("estado") !== "aceptada" || invite.get("destinatarioUid") !== ownerUid) return null;
+          invite.get("estado") !== "aceptada") return null;
       // Lectura mediada por servidor: nunca se entregan rutas de Firestore para acceso directo.
       const campaigns = await db.collection(`clientes/${ownerClientId}/campanas`).limit(50).get();
       const sameCategory = (value: unknown) => {

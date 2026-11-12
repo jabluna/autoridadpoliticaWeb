@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const now = Date.now();
     return NextResponse.json({ invitaciones: snap.docs.map(d => {
       const x = d.data(), expired = x.expiraEn?.toMillis?.() < now;
-      return { id: d.id, campanaNombre: x.campanaNombre, categoria: x.categoria, estado: expired && x.estado === "pendiente" ? "expirada" : x.estado, emisorNombre: x.emisorNombre, expiraEn: x.expiraEn?.toDate?.()?.toISOString?.() };
+      return { id: d.id, campanaNombre: x.campanaNombre, categoria: x.categoria, estado: expired && x.estado === "pendiente" ? "expirada" : x.estado, emisorNombre: x.emisorNombre, expiraEn: x.expiraEn?.toDate?.()?.toISOString?.(), aceptadaEn: x.respondidaEn?.toDate?.()?.toISOString?.(), retiradaEn: x.retiradaEn?.toDate?.()?.toISOString?.() };
     }) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { console.error("Invitaciones GET", error); return fail("No fue posible consultar las invitaciones.", 503); }
 }
@@ -86,11 +86,32 @@ export async function PATCH(request: NextRequest) {
     if (!ctx) return fail("Inicia sesión con un correo verificado.", 401);
     const body = await request.json() as Record<string, unknown>;
     const id = body?.id, decision = body?.decision;
-    if (typeof id !== "string" || !/^[a-f0-9]{48}$/.test(id) || !["aceptar", "rechazar"].includes(String(decision))) return fail("Solicitud inválida.", 400);
+    if (typeof id !== "string" || !/^[a-f0-9]{48}$/.test(id) || !["aceptar", "rechazar", "retirar"].includes(String(decision))) return fail("Solicitud inválida.", 400);
     const invitation = ctx.db.doc(`invitacionesRed/${id}`);
     const result = await ctx.db.runTransaction(async tx => {
       const snap = await tx.get(invitation);
       if (!snap.exists || snap.get("destinatarioUid") !== ctx.uid) return { status: 404, error: "Invitación no encontrada." };
+      if (decision === "retirar") {
+        if (snap.get("estado") !== "aceptada") return { status: 409, error: "Esta invitación no tiene una vinculación activa." };
+        if (ctx.user.get("rol") !== "cliente_admin") return { status: 403, error: "Solo el propietario puede retirarse." };
+        const categoria = String(snap.get("categoria") || "");
+        const ownerRef = ctx.db.doc(`vinculacionesPorUsuario/${ctx.uid}/categorias/${categoria}`);
+        const linkRef = ctx.db.doc(`vinculacionesCampana/${id}`);
+        const [owner, link, ownerHistory] = await Promise.all([tx.get(ownerRef), tx.get(linkRef), tx.get(ctx.db.doc(`clientes/${String(ctx.user.get("clienteId"))}`))]);
+        if (!owner.exists || owner.get("estado") !== "activa" || owner.get("invitacionId") !== id ||
+            !link.exists || link.get("estado") !== "activa" || link.get("propietarioUid") !== ctx.uid ||
+            link.get("clientePropietarioId") !== ctx.user.get("clienteId") ||
+            link.get("clienteReceptorId") !== snap.get("clienteId") ||
+            link.get("campanaReceptoraId") !== snap.get("campanaId")) {
+          return { status: 409, error: "No se encontró una vinculación activa y consistente." };
+        }
+        const historicName = String((ownerHistory.exists ? ownerHistory.get("nombreCliente") : "") || ctx.user.get("nombre") || "Red desvinculada");
+        // Revocar el acceso y liberar la categoría en una sola transacción.
+        tx.update(ownerRef, { estado: "retirada", accesoCompartido: false, retiradaEn: FieldValue.serverTimestamp() });
+        tx.update(linkRef, { estado: "retirada", accesoCompartido: false, nombreHistorico: historicName, retiradaEn: FieldValue.serverTimestamp() });
+        tx.update(invitation, { estado: "retirada", accesoCompartido: false, retiradaEn: FieldValue.serverTimestamp() });
+        return { estado: "retirada", accesoCompartido: false };
+      }
       if (snap.get("estado") !== "pendiente" || (snap.get("expiraEn")?.toMillis?.() || 0) < Date.now()) return { status: 409, error: "La invitación ya no está disponible." };
       if (decision === "rechazar") { tx.update(invitation, { estado: "rechazada", respondidaEn: FieldValue.serverTimestamp() }); return { estado: "rechazada" }; }
       const categoria = snap.get("categoria") as string;
