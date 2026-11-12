@@ -252,24 +252,24 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const notify = (text: string, success = false) => { setError(success ? "" : text); setOk(success ? text : ""); };
   const inviteToCampaign = async () => {
     if (!campanaId || !auth.currentUser) return notify("Selecciona primero una campaña.");
-    const email = window.prompt("Correo electrónico de la persona que deseas invitar a tu grupo de trabajo:");
-    if (!email?.trim()) return;
+    const telefono = window.prompt("Número de WhatsApp del cliente registrado que deseas invitar (ejemplo: 3001234567):");
+    if (!telefono?.trim()) return;
     try {
       const response = await fetch("/api/invitaciones-red", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${await auth.currentUser.getIdToken()}` },
-        body: JSON.stringify({ campanaId, email: email.trim() }),
+        body: JSON.stringify({ campanaId, telefono: telefono.trim() }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo crear la invitación.");
       const url = `${window.location.origin}/invitaciones`;
       const campaign = campanas.find(c => c.id === campanaId)?.nombreCampana || "mi campaña";
-      const message = `Te han invitado a formar parte de mi grupo de trabajo en ${campaign}. Ingresa con el correo ${email.trim()} y revisa tu invitación: ${url}. La vinculación requiere tu aceptación y no comparte datos hasta su activación.`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-      notify("Invitación creada. Comparte el mensaje abierto en WhatsApp.", true);
-    } catch (error) { notify(error instanceof Error ? error.message : "No fue posible enviar la invitación."); }
+      const message = `Te han invitado a formar parte de mi grupo de trabajo en ${campaign}. Inicia sesión en Autoridad Política y revisa tu invitación: ${url}. La vinculación requiere tu aceptación y no comparte datos hasta su activación.`;
+      const whatsapp = `https://wa.me/${data.telefono.startsWith("57") ? data.telefono : `57${data.telefono}`}?text=${encodeURIComponent(message)}`;
+      window.open(whatsapp, "_blank", "noopener,noreferrer");
+      notify("Invitación creada. Se abrió WhatsApp con el mensaje preparado.", true);
+    } catch (error) { notify(error instanceof Error ? error.message : "No fue posible crear la invitación."); }
   };
-
 
   useEffect(() => {
     let live = true;
