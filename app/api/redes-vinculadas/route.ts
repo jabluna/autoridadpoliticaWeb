@@ -31,22 +31,21 @@ export async function GET(request: NextRequest) {
         db.doc(`vinculacionesPorUsuario/${ownerUid}/categorias/${category}`).get(),
         db.doc(`invitacionesRed/${link.id}`).get(),
       ]);
-      if (!owner.exists || owner.get("clienteId") !== ownerClientId || !client.exists ||
-          !reservation.exists || reservation.get("invitacionId") !== link.id ||
-          !invite.exists || invite.get("destinatarioUid") !== ownerUid ||
-          (withdrawn
-            ? (reservation.get("estado") !== "retirada" || invite.get("estado") !== "retirada")
-            : (owner.get("estado") === "inactivo" || client.get("estado") === "inactivo" ||
-               reservation.get("estado") !== "activa" || invite.get("estado") !== "aceptada"))) return null;
+      if (!invite.exists || invite.get("destinatarioUid") !== ownerUid) return null;
       if (withdrawn) {
-        // Ficha sombra histórica: nunca consultar ni entregar nodos privados.
+        // La ficha sombra no depende de que la persona conserve su cuenta o categoría reservada.
+        if (invite.get("estado") !== "retirada") return null;
         return {
-          id: link.id, nombre: String(client.get("nombreCliente") || "Red desvinculada"),
+          id: link.id, nombre: String(link.get("nombreHistorico") || invite.get("destinatarioNombre") || "Red desvinculada"),
           categoria: category, estado: "retirada", accesoCompartido: false, red: [],
           retiradaEn: link.get("retiradaEn")?.toDate?.()?.toISOString?.(),
           aviso: "El propietario se retiró. Sin acceso a su estructura ni aporte electoral."
         };
       }
+      if (!owner.exists || owner.get("estado") === "inactivo" || owner.get("clienteId") !== ownerClientId ||
+          !client.exists || client.get("estado") === "inactivo" ||
+          !reservation.exists || reservation.get("estado") !== "activa" || reservation.get("invitacionId") !== link.id ||
+          invite.get("estado") !== "aceptada") return null;
       // Lectura mediada por servidor: nunca se entregan rutas de Firestore para acceso directo.
       const campaigns = await db.collection(`clientes/${ownerClientId}/campanas`).limit(50).get();
       const sameCategory = (value: unknown) => {
