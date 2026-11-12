@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       const tree = activeNodes.map(n => ({
         id: n.id, padreId: String(n.get("padreId") || ""), nombre: String(n.get("nombre") || ""),
         apellido: String(n.get("apellido") || ""), nivel: Number(n.get("nivel") || 1),
-        estimacionVotos: Number(n.get("estimacionVotos") || 0),
+        estimacionVotos: Number(n.get("estimacionVotos") || 0), votosRealesSubarbol: Number(n.get("votosRealesSubarbol") || 0), puntuacion: Number(n.get("puntuacion") || 0), multinodo: n.get("multinodo") !== false, etiquetaId: String(n.get("etiquetaId") || ""), fotoUrl: String(n.get("fotoUrl") || ""),
       }));
       return {
         id: link.id, nombre: String(client.get("nombreCliente") || owner.get("nombre") || "Red vinculada"),
