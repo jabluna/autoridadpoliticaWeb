@@ -85,7 +85,7 @@ export async function PATCH(request: NextRequest) {
       const categoria = snap.get("categoria") as string;
       const owner = ctx.db.doc(`vinculacionesPorUsuario/${ctx.uid}/categorias/${categoria}`);
       const current = await tx.get(owner);
-      if (current.exists && current.get("estado") === "activa") return { status: 409, error: "Ya tienes una vinculación activa en esta categoría electoral." };
+      if (current.exists && ["activa", "pendiente_activacion"].includes(String(current.get("estado")))) return { status: 409, error: "Ya tienes una vinculación activa en esta categoría electoral." };
       // Reservar la categoría sin otorgar acceso a datos hasta implementar la etapa 3.
       tx.set(owner, { invitacionId: id, clienteId: snap.get("clienteId"), campanaId: snap.get("campanaId"), categoria, estado: "pendiente_activacion", creadoEn: FieldValue.serverTimestamp() });
       tx.update(invitation, { estado: "aceptada_pendiente_activacion", destinatarioUid: ctx.uid, respondidaEn: FieldValue.serverTimestamp(), accesoCompartido: false });
