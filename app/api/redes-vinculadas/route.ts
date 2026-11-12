@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       // Lectura mediada por servidor: nunca se entregan rutas de Firestore para acceso directo.
       const campaigns = await db.collection(`clientes/${ownerClientId}/campanas`).limit(50).get();
       const sameCategory = (value: unknown) => {
-        const raw = String(value || "").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+        const raw = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
         return raw.includes(category) || (category === "alcaldia" && raw.includes("alcald")) || (category === "gobernacion" && raw.includes("gobern")) || (category === "presidencia" && raw.includes("presiden")) || (category === "camara" && raw.includes("representante")) || (category === "concejo" && raw.includes("concejal")) || (category === "asamblea" && raw.includes("diputad"));
       };
       const matching = campaigns.docs.filter(d => sameCategory(d.get("corporacion") || d.get("cargoAspirado") || d.get("cargo") || d.get("tipoCampana") || client.get("corporacion") || client.get("cargoAspirado")));
