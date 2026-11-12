@@ -889,7 +889,51 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       } catch (e) { notify(e instanceof Error ? e.message : "No se pudo calcular la red."); }
     }, e => notify(e.message || "No se pudo consultar la red."));
   }, [clienteId, campanaId]);
-  const statsFor = (n: Nodo) => isLinkedNode(n.id) ? { votos: Number(n.votosRealesSubarbol || 0), directos: 0, profundidad: 0 } : networkStats[n.id] || { votos: 1, directos: 0, profundidad: 0 };
+  const linkedStats = useMemo(() => {
+    const all: Record<string, { votos: number; directos: number; profundidad: number }> = {};
+    for (const network of linkedNetworks) {
+      const byParent = new Map<string, typeof network.red>();
+      const ids = new Set(network.red.map(n => n.id));
+      for (const n of network.red) {
+        const parent = n.padreId && ids.has(n.padreId) ? n.padreId : "";
+        byParent.set(parent, [...(byParent.get(parent) || []), n]);
+      }
+      const computed = new Map<string, { votos: number; directos: number; profundidad: number }>();
+      const visiting = new Set<string>();
+      const compute = (node: typeof network.red[number]): { votos: number; directos: number; profundidad: number } => {
+        const cached = computed.get(node.id);
+        if (cached) return cached;
+        if (visiting.has(node.id)) throw new Error("Jerarquía circular en red vinculada.");
+        visiting.add(node.id);
+        const direct = byParent.get(node.id) || [];
+        let votos = node.multinodo === false ? Math.max(1, Number(node.estimacionVotos) || 1) : 1;
+        let profundidad = 0;
+        for (const child of direct) {
+          const result = compute(child);
+          votos += result.votos;
+          profundidad = Math.max(profundidad, 1 + result.profundidad);
+        }
+        visiting.delete(node.id);
+        const stats = { votos, directos: direct.length, profundidad };
+        computed.set(node.id, stats);
+        return stats;
+      };
+      try {
+        for (const node of network.red) compute(node);
+        for (const [id, stats] of computed) all[`linked:${network.id}:${id}`] = stats;
+        const roots = byParent.get("") || [];
+        all[`linked:${network.id}`] = {
+          votos: roots.reduce((sum, n) => sum + (computed.get(n.id)?.votos || 0), 0),
+          directos: roots.length,
+          profundidad: roots.reduce((max, n) => Math.max(max, 1 + (computed.get(n.id)?.profundidad || 0)), 0),
+        };
+      } catch (error) {
+        console.error("No se pudo calcular la matriz de la red vinculada", network.id, error);
+      }
+    }
+    return all;
+  }, [linkedNetworks]);
+  const statsFor = (n: Nodo) => isLinkedNode(n.id) ? linkedStats[n.id] || { votos: 0, directos: 0, profundidad: 0 } : networkStats[n.id] || { votos: 1, directos: 0, profundidad: 0 };
   const [rootTotals, setRootTotals] = useState({ votos: 0, estimados: 0, directos: 0, profundidad: 0 });
   const estimateGap = (n: Nodo) => Number(n.estimacionVotos || 0) - statsFor(n).votos;
 
