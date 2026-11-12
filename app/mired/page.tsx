@@ -96,6 +96,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [globalSearch, setGlobalSearch] = useState("");
   const [globalResults, setGlobalResults] = useState<Nodo[]>([]);
   const [globalSearching, setGlobalSearching] = useState(false);
+  const [linkedSearchResults, setLinkedSearchResults] = useState<Array<{ networkId: string; nodeId: string | null; nombre: string; nivel: number }>>([]);
   const [movePicker, setMovePicker] = useState<Nodo | null>(null);
   const [destination, setDestination] = useState<string | null>(null);
   const [destinationSearch, setDestinationSearch] = useState("");
@@ -693,15 +694,20 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
 
   useEffect(() => {
     const seq = ++searchSeq.current;
-    if (globalSearch.trim().length < 2) { setGlobalResults([]); setGlobalSearching(false); return; }
+    if (globalSearch.trim().length < 2) { setGlobalResults([]); setLinkedSearchResults([]); setGlobalSearching(false); return; }
     setGlobalSearching(true);
+    const words = globalSearch.trim().toLocaleLowerCase("es").split(/\\s+/).filter(Boolean);
+    setLinkedSearchResults(linkedNetworks.flatMap(network => [
+      { networkId: network.id, nodeId: null, nombre: network.nombre, nivel: 2 },
+      ...network.red.map(n => ({ networkId: network.id, nodeId: n.id, nombre: `${n.nombre} ${n.apellido}`.trim(), nivel: Number(n.nivel || 1) + 1 })),
+    ].filter(item => words.every(word => item.nombre.toLocaleLowerCase("es").includes(word)))) .slice(0, 100));
     const timer = setTimeout(() => {
       void lookupNodes(globalSearch).then(result => { if (searchSeq.current === seq) setGlobalResults(result); })
         .catch(e => { if (searchSeq.current === seq) notify(e instanceof Error ? e.message : "Error buscando nodos."); })
         .finally(() => { if (searchSeq.current === seq) setGlobalSearching(false); });
     }, 300);
     return () => clearTimeout(timer);
-  }, [globalSearch, lookupNodes]);
+  }, [globalSearch, lookupNodes, linkedNetworks]);
 
   useEffect(() => {
     if (!movePicker || destinationSearch.trim().length < 2) { setDestinationResults([]); return; }
@@ -982,6 +988,10 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
         {globalSearching && <p className="p-3 text-xs text-slate-500">Buscando...</p>}
         {!globalSearching && !globalResults.length && <p className="p-3 text-xs text-slate-500">No se encontraron líderes con esos datos.</p>}
         {globalResults.map(n => <button key={n.id} type="button" onClick={() => { setFocusId(n.id); setGlobalSearch(""); setGlobalResults([]); setSearchCards(false); }} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs hover:bg-emerald-50"><span className="font-bold">{fullName(n)} <span className="font-normal text-slate-400">· {tag(n.etiquetaId)?.nombre || "Sin etiqueta"}</span></span><span className="shrink-0 text-emerald-700">Nivel {n.nivel} →</span></button>)}
+      </div>}
+      {globalSearch.trim().length >= 2 && linkedSearchResults.length > 0 && <div className="mt-2 max-h-52 space-y-1 overflow-auto rounded-xl border border-emerald-200 bg-white p-2">
+        <div className="px-2 text-[10px] font-bold text-emerald-800">Coincidencias en redes vinculadas ({linkedSearchResults.length})</div>
+        {linkedSearchResults.map(result => <button key={`${result.networkId}:${result.nodeId || "root"}`} type="button" onClick={() => { setFocusId(null); setLinkedFocus({networkId: result.networkId,nodeId:result.nodeId});setGlobalSearch("");setLinkedSearchResults([]);setGlobalResults([]);setChildrenPage(1); }} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-xs hover:bg-emerald-50"><span>{result.nombre}</span><span className="text-emerald-700">Nivel {result.nivel} →</span></button>)}
       </div>}
       {globalSearch.trim().length >= 2 && !globalSearching && globalResults.length > 0 && <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><span className="text-xs font-bold text-emerald-950">{globalResults.length} líderes encontrados</span><button type="button" onClick={() => setSearchCards(v=>!v)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">{searchCards ? "Volver a lista" : "Ver tarjetas de resultados"}</button></div>}
       {globalSearch.trim().length >= 2 && searchCards && <div className="mt-3 grid max-h-[450px] grid-cols-1 gap-3 overflow-auto rounded-xl bg-slate-50 p-3 grid-cols-1">{globalResults.map(n => <div key={n.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-2"><strong className="text-sm text-slate-900">{fullName(n)}</strong><span className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">Nivel {n.nivel}</span></div><p className="mt-2 text-xs text-slate-600">{[n.ciudad,n.departamento,etiquetas.find(t=>t.id===n.etiquetaId)?.nombre].filter(Boolean).join(" · ")}</p><p className="mt-2 text-sm font-bold text-slate-700">★ {n.puntuacion ?? "—"}/10</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { setFocusId(n.id); setGlobalSearch(""); setGlobalResults([]); setSearchCards(false); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Abrir en la red →</button><button type="button" onClick={() => {setRatingNode(n);setRatingValue(n.puntuacion ?? 5);}} className="rounded-lg border px-3 py-2 text-xs font-bold">✎ Calificar</button></div></div>)}</div>}
