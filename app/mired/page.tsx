@@ -6,7 +6,7 @@ import { onAuthStateChanged, createUserWithEmailAndPassword, getAuth, sendEmailV
 import { deleteApp, getApp, initializeApp } from "firebase/app";
 import { collection, deleteDoc, doc, getDoc, getDocs, getCountFromServer, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, updateDoc, where, writeBatch, increment, type DocumentSnapshot, type QuerySnapshot, type Query, type DocumentData } from "firebase/firestore";
 import { auth, db, rtdb, storage } from "@/lib/firebase";
-import RedVinculadaCards, { type RedVinculada } from "./RedVinculadaCards";
+import { type RedVinculada } from "./RedVinculadaCards";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { get, ref } from "firebase/database";
 
@@ -45,7 +45,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [directory, setDirectory] = useState<Nodo[]>([]);
   const [linkedNetworks, setLinkedNetworks] = useState<RedVinculada[]>([]);
   const [linkedLoading, setLinkedLoading] = useState(false);
-  const [expandedLinked, setExpandedLinked] = useState<string[]>([]);
+  const [linkedFocus, setLinkedFocus] = useState<{ networkId: string; nodeId: string | null } | null>(null);
   const [tableRootExpanded, setTableRootExpanded] = useState(false);
   const [tableExpandedIds, setTableExpandedIds] = useState<string[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<DocumentSnapshot | null>(null);
@@ -470,7 +470,33 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [leaderFilter, setLeaderFilter] = useState("");
   const [leaderSort, setLeaderSort] = useState<"votos" | "nombre" | "estimado" | "calificacion">("votos");
   const [leaderPageSize, setLeaderPageSize] = useState(12);
-  const filteredLeaders = children.filter(n => [fullName(n), n.email, n.identificacion, n.ciudad, n.departamento, tag(n.etiquetaId)?.nombre].join(" ").toLocaleLowerCase("es").includes(leaderFilter.trim().toLocaleLowerCase("es"))).sort((a,b) => leaderSort === "nombre" ? fullName(a).localeCompare(fullName(b),"es") : leaderSort === "estimado" ? Number(b.estimacionVotos || 0) - Number(a.estimacionVotos || 0) : leaderSort === "calificacion" ? Number(b.puntuacion || 0) - Number(a.puntuacion || 0) : (networkStats[b.id]?.votos || 1) - (networkStats[a.id]?.votos || 1));
+  const selectedLinked = linkedFocus ? linkedNetworks.find(n => n.id === linkedFocus.networkId) : null;
+  const linkedNodesAtLevel = selectedLinked ? selectedLinked.red.filter(n => linkedFocus?.nodeId ? n.padreId === linkedFocus.nodeId : !n.padreId || !selectedLinked.red.some(parent => parent.id === n.padreId)) : [];
+  const linkedRootNodes = !leaderMode && !focusId && !linkedFocus ? linkedNetworks.map(network => ({
+    id: `linked:${network.id}`, nombre: network.nombre, apellido: "", padreId: null,
+    nivel: 2, estado: "activo", multinodo: true, estimacionVotos: network.red.reduce((s,n)=>s+Number(n.estimacionVotos||0),0),
+    votosRealesSubarbol: network.red.filter(n=>!n.padreId || !network.red.some(p=>p.id===n.padreId)).reduce((s,n)=>s+Number(n.votosRealesSubarbol||0),0),
+    fotoUrl: "", etiquetaId: "",
+  } as Nodo)) : [];
+  const linkedChildNodes = selectedLinked ? linkedNodesAtLevel.map(n => ({
+    ...n, id: `linked:${selectedLinked.id}:${n.id}`, padreId: n.padreId || null,
+    nivel: n.nivel + 1, estado: "activo",
+  } as Nodo)) : [];
+  const displayedChildren = linkedFocus ? linkedChildNodes : [...children, ...linkedRootNodes];
+  const isLinkedNode = (id: string) => id.startsWith("linked:");
+  const navigateLinked = (id: string) => {
+    const [, networkId, nodeId] = id.split(":");
+    setLinkedFocus({ networkId, nodeId: nodeId || null });
+    setChildrenPage(1);
+  };
+  const goLinkedUp = () => {
+    if (!linkedFocus) return;
+    const network = linkedNetworks.find(n=>n.id===linkedFocus.networkId);
+    const current = network?.red.find(n=>n.id===linkedFocus.nodeId);
+    if (!linkedFocus.nodeId || !current || !current.padreId) setLinkedFocus(null);
+    else setLinkedFocus({networkId: linkedFocus.networkId,nodeId:current.padreId});
+  };
+  const filteredLeaders = displayedChildren.filter(n => [fullName(n), n.email, n.identificacion, n.ciudad, n.departamento, tag(n.etiquetaId)?.nombre].join(" ").toLocaleLowerCase("es").includes(leaderFilter.trim().toLocaleLowerCase("es"))).sort((a,b) => leaderSort === "nombre" ? fullName(a).localeCompare(fullName(b),"es") : leaderSort === "estimado" ? Number(b.estimacionVotos || 0) - Number(a.estimacionVotos || 0) : leaderSort === "calificacion" ? Number(b.puntuacion || 0) - Number(a.puntuacion || 0) : (networkStats[b.id]?.votos || 1) - (networkStats[a.id]?.votos || 1));
   const childrenPages = Math.max(1, Math.ceil(filteredLeaders.length / leaderPageSize));
   const visibleChildren = filteredLeaders.slice((childrenPage - 1) * leaderPageSize, childrenPage * leaderPageSize);
   const tagsFiltered = etiquetas.filter(t => `${t.nombre} ${t.descripcion || ""}`.toLowerCase().includes(tagSearch.toLowerCase()));
@@ -867,21 +893,11 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [rootTotals, setRootTotals] = useState({ votos: 0, estimados: 0, directos: 0, profundidad: 0 });
   const estimateGap = (n: Nodo) => Number(n.estimacionVotos || 0) - statsFor(n).votos;
 
+  const linkedCurrent = selectedLinked?.red.find(n=>n.id===linkedFocus?.nodeId);
+  const linkedTitle = linkedFocus ? (linkedCurrent ? `${linkedCurrent.nombre} ${linkedCurrent.apellido}` : selectedLinked?.nombre || "Red vinculada") : "";
+  const linkedTotalVotes = (n: Nodo) => isLinkedNode(n.id) ? Number(n.votosRealesSubarbol || 0) : statsFor(n).votos;
   const graph = <section className={`flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${fullscreen ? "fixed inset-0 z-40 rounded-none" : ""}`}>
     <div className="flex-1 overflow-auto bg-[#f4faff] p-4" style={{ minHeight: fullscreen ? 0 : 420 }}>
-      {!leaderMode && (linkedLoading || linkedNetworks.length > 0) && <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-        <h3 className="text-sm font-bold text-emerald-950">Redes vinculadas a mi campaña</h3>
-        <p className="mt-1 text-xs text-emerald-900">Personas que aceptaron unirse con su propia red. Conservan la propiedad de sus datos.</p>
-        {linkedLoading && <p className="mt-2 text-xs">Consultando vinculaciones…</p>}
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {linkedNetworks.map(network => <div key={network.id} className="rounded-xl border border-emerald-200 bg-white p-3 shadow-sm">
-            <div className="font-bold text-slate-900">{network.nombre}</div>
-            <div className="mt-1 text-xs text-slate-600">Campaña: {network.categoria}</div>
-            <div className="mt-2 text-xs font-semibold text-emerald-700">✓ Vinculación aceptada</div>
-            <div className="mt-1 text-xs text-slate-500">{network.accesoCompartido ? "Acceso a red habilitado" : "Vista completa de la red pendiente de habilitación segura"}</div>
-          </div>)}
-        </div>
-      </div>}
       <div className="w-full">
         <div className="relative grid grid-cols-1 items-start justify-items-center gap-3 xl:grid-cols-[minmax(0,1fr)_300px_minmax(0,1fr)] xl:gap-4">
         <div className="relative w-full max-w-[380px] min-w-0 self-start rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-start-1 xl:row-start-1 xl:justify-self-start">
@@ -934,12 +950,12 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
         </aside>
         </div>
         <div aria-hidden="true" className="mx-auto h-9 w-[3px] rounded-full bg-sky-500" />
-        {childrenLoading ? <p className="p-10 text-center text-sm">Cargando nodos...</p> : <div className="relative grid gap-x-3 gap-y-6 pt-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{visibleChildren.length > 1 && <div aria-hidden="true" className="pointer-events-none absolute top-0 hidden h-[3px] rounded-full bg-sky-500 xl:block" style={{left:"10%",width:`${(Math.min(visibleChildren.length,5)-1)*20}%`}} />}{!leaderMode && !focusId && linkedNetworks.map(network => <RedVinculadaCards key={network.id} network={network} />)}{visibleChildren.map(n => <article key={n.id} className={`relative min-w-0 rounded-[20px] border-2 p-3 text-center shadow-[0_6px_20px_rgba(20,90,140,.08)] transition hover:shadow-lg ${n.multinodo !== false ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-500" : "border-sky-300 bg-sky-50/60 hover:border-sky-500"}`}>
-<div aria-hidden="true" className="pointer-events-none absolute -top-5 left-1/2 hidden h-5 w-[3px] -translate-x-1/2 bg-sky-500 xl:block" /><div className="flex justify-between text-[10px] font-bold text-sky-500"><span>Nivel {n.nivel} · {n.multinodo !== false ? "● Crea red" : "● Sin red"}</span><button onClick={()=>setFocusId(n.id)} className="inline-flex items-center gap-2 rounded-xl border-2 border-sky-800 bg-sky-700 px-3 py-2 text-xs font-extrabold text-white shadow-md shadow-sky-900/20 transition hover:scale-[1.03] hover:bg-sky-800 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600">Ver mi red <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-sky-800 shadow-sm">➜</span></button></div>
+        {childrenLoading ? <p className="p-10 text-center text-sm">Cargando nodos...</p> : <div className="relative grid gap-x-3 gap-y-6 pt-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{visibleChildren.length > 1 && <div aria-hidden="true" className="pointer-events-none absolute top-0 hidden h-[3px] rounded-full bg-sky-500 xl:block" style={{left:"10%",width:`${(Math.min(visibleChildren.length,5)-1)*20}%`}} />}{visibleChildren.map(n => <article key={n.id} className={`relative min-w-0 rounded-[20px] border-2 p-3 text-center shadow-[0_6px_20px_rgba(20,90,140,.08)] transition hover:shadow-lg ${n.multinodo !== false ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-500" : "border-sky-300 bg-sky-50/60 hover:border-sky-500"}`}>
+<div aria-hidden="true" className="pointer-events-none absolute -top-5 left-1/2 hidden h-5 w-[3px] -translate-x-1/2 bg-sky-500 xl:block" /><div className="flex justify-between text-[10px] font-bold text-sky-500"><span>Nivel {n.nivel} · {n.multinodo !== false ? "● Crea red" : "● Sin red"}</span><button onClick={()=>isLinkedNode(n.id) ? navigateLinked(n.id) : setFocusId(n.id)} className="inline-flex items-center gap-2 rounded-xl border-2 border-sky-800 bg-sky-700 px-3 py-2 text-xs font-extrabold text-white shadow-md shadow-sky-900/20 transition hover:scale-[1.03] hover:bg-sky-800 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600">Ver mi red <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-sky-800 shadow-sm">➜</span></button></div>
 <div className="mt-2 flex items-center gap-2 text-left"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-sky-300 bg-sky-50 text-sm font-black text-sky-700">{n.fotoUrl?<img src={n.fotoUrl} alt={fullName(n)} className="h-full w-full object-cover" />:`${(n.nombre?.[0]||"L").toUpperCase()}${(n.apellido?.[0]||"").toUpperCase()}`}</div><div className="min-w-0 flex-1"><button onClick={()=>setFocusId(n.id)} title={fullName(n)} className="block w-full truncate text-left text-xs font-extrabold text-slate-900 hover:text-sky-700">{fullName(n)}</button><p className="truncate text-[9px] text-slate-500" title={n.email}>{tag(n.etiquetaId)?.nombre||"Líder"} · {n.email}</p><button onClick={()=>{setRatingNode(n);setRatingValue(n.puntuacion??5);}} className="mt-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style={{backgroundColor:n.puntuacion==null?"#f1f5f9":`hsl(${Math.round((Math.max(1,Math.min(10,Number(n.puntuacion)))-1)/9*125)} 75% 92%)`,color:n.puntuacion==null?"#64748b":`hsl(${Math.round((Math.max(1,Math.min(10,Number(n.puntuacion)))-1)/9*125)} 75% 30%)`}}>★ {n.puntuacion??"—"}/10 ✎</button></div><div className="shrink-0 space-y-1 text-right"><div className="animate-pulse rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-1 shadow-[0_0_12px_rgba(16,185,129,.20)]"><strong className="block text-lg font-black leading-none text-emerald-800">{statsFor(n).votos.toLocaleString("es-CO")}</strong><span className="text-[9px] text-slate-500">Votos</span></div><div className="rounded-lg border border-violet-300 bg-violet-100 px-2 py-1"><strong className="block text-sm font-black leading-none text-violet-800">{statsFor(n).directos}×{statsFor(n).profundidad}</strong><span className="text-[9px] text-slate-500">Matriz</span></div></div></div>
 {(() => {const estimated=Number(n.estimacionVotos||0);const pct=estimated>0?Math.round(statsFor(n).votos/estimated*100):0;return <div className="mt-2"><div className="flex justify-between text-[10px] text-slate-500"><span>Avance</span><strong>{estimated>0?`${pct}%`:"Sin meta"}</strong></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400" style={{width:`${Math.min(100,Math.max(0,pct))}%`}} /></div></div>})()}
 <div className="mt-2 grid grid-cols-3 gap-1 text-left">{[["Estimado",Number(n.estimacionVotos||0)],["Diferencia",estimateGap(n)],["Reuniones",Number(n.votosRealesSubarbol||0)]].map(([label,value])=><div key={String(label)} className={`min-w-0 rounded-lg border p-1.5 ${label === "Estimado" ? "border-amber-200 bg-amber-50 text-amber-900" : label === "Diferencia" ? "border-violet-200 bg-violet-50 text-violet-900" : "border-cyan-200 bg-cyan-50 text-cyan-900"}`}><strong className="block truncate text-xs font-black">{Number(value).toLocaleString("es-CO")}</strong><span className="text-[9px] text-slate-500">{label}</span></div>)}</div>
-<details className="mt-2 border-t border-slate-100 pt-2 text-left"><summary className="cursor-pointer rounded-lg bg-sky-50 px-3 py-2 text-center text-xs font-bold text-sky-800">Acciones · Ver más ▾</summary><div className="mt-2 grid grid-cols-2 gap-1.5"><button onClick={()=>openForm("persona",n.id)} className="rounded-lg border p-2 text-[11px]">+ Reuniones</button><button onClick={()=>showPeople(n.id)} className="rounded-lg border p-2 text-[11px]">Ver reuniones</button><button onClick={()=>{setFocusId(n.id);openForm("nodo",n.id);}} disabled={n.multinodo===false||n.nivel>=niveles} className="rounded-lg bg-emerald-600 p-2 text-[11px] font-bold text-white disabled:opacity-40">+ Líder</button><button onClick={()=>openForm("nodo",n.padreId,n)} className="rounded-lg border p-2 text-[11px]">Editar</button><button onClick={()=>void abrirNotas(n)} className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-[11px] font-semibold text-blue-800">Comentarios</button><button onClick={()=>compartirResumen(n)} className="flex items-center justify-center gap-1 rounded-lg border border-green-200 bg-green-50 p-2 text-[11px] font-semibold text-green-800"><span aria-hidden="true">✆</span> WhatsApp</button>{!leaderMode&&<><button onClick={()=>openMove(n)} className="rounded-lg border p-2 text-[11px]">Mover</button><button onClick={()=>void removeNode(n)} className="rounded-lg border border-rose-200 p-2 text-[11px] text-rose-700">Eliminar</button></>}</div></details>
+<details className="mt-2 border-t border-slate-100 pt-2 text-left"><summary className="cursor-pointer rounded-lg bg-sky-50 px-3 py-2 text-center text-xs font-bold text-sky-800">Acciones · Ver más ▾</summary><div className="mt-2 grid grid-cols-2 gap-1.5"><button onClick={()=>{if(!isLinkedNode(n.id))openForm("persona",n.id);}} className="rounded-lg border p-2 text-[11px]">+ Reuniones</button><button onClick={()=>{if(!isLinkedNode(n.id))showPeople(n.id);}} className="rounded-lg border p-2 text-[11px]">Ver reuniones</button><button onClick={()=>{if(!isLinkedNode(n.id)){setFocusId(n.id);openForm("nodo",n.id);}}} disabled={isLinkedNode(n.id)||n.multinodo===false||n.nivel>=niveles} className="rounded-lg bg-emerald-600 p-2 text-[11px] font-bold text-white disabled:opacity-40">+ Líder</button><button onClick={()=>{if(!isLinkedNode(n.id))openForm("nodo",n.padreId,n);}} className="rounded-lg border p-2 text-[11px]">Editar</button><button onClick={()=>{if(!isLinkedNode(n.id))void abrirNotas(n);}} className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-[11px] font-semibold text-blue-800">Comentarios</button><button onClick={()=>{if(!isLinkedNode(n.id))compartirResumen(n);}} className="flex items-center justify-center gap-1 rounded-lg border border-green-200 bg-green-50 p-2 text-[11px] font-semibold text-green-800"><span aria-hidden="true">✆</span> WhatsApp</button>{!leaderMode&&!isLinkedNode(n.id)&&<><button onClick={()=>{if(!isLinkedNode(n.id))openMove(n);}} className="rounded-lg border p-2 text-[11px]">Mover</button><button onClick={()=>{if(!isLinkedNode(n.id))void removeNode(n);}} className="rounded-lg border border-rose-200 p-2 text-[11px] text-rose-700">Eliminar</button></>}</div></details>
 </article>)}</div>}{!childrenLoading && childrenPages > 1 && <div className="mt-5 flex flex-wrap items-center justify-center gap-3"><button type="button" disabled={childrenPage <= 1} onClick={() => setChildrenPage(p => Math.max(1,p-1))} className="rounded-xl border bg-white px-4 py-2 text-xs font-bold disabled:opacity-40">← Anterior</button><span className="text-xs font-semibold text-slate-600">Página {childrenPage} de {childrenPages} · {filteredLeaders.length} líderes</span><button type="button" disabled={childrenPage >= childrenPages} onClick={() => setChildrenPage(p => Math.min(childrenPages,p+1))} className="rounded-xl border bg-white px-4 py-2 text-xs font-bold disabled:opacity-40">Siguiente →</button></div>}
         {!childrenLoading && !filteredLeaders.length && (leaderMode || !!focusId || linkedNetworks.length === 0) && <p className="mt-8 text-center text-sm text-slate-400">Este nodo aún no tiene nodos directos.</p>}{branchError && <p className="mt-3 text-center text-xs text-amber-700">{branchError}</p>}
       </div>
