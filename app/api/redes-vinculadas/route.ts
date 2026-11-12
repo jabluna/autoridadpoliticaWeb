@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       };
       const matching = campaigns.docs.filter(d => sameCategory(d.get("corporacion") || d.get("cargoAspirado") || d.get("cargo") || d.get("tipoCampana") || client.get("corporacion") || client.get("cargoAspirado")));
       // No asumir una campaña cuando hay varias del mismo tipo: podría exponer datos de otra campaña.
-      const source = matching.length === 1 ? matching[0] : null;
+      const source = matching.length === 1 ? matching[0] : campaigns.docs.length === 1 ? campaigns.docs[0] : null;
       const nodes = source ? await db.collection(`clientes/${ownerClientId}/campanas/${source.id}/nodos`).limit(501).get() : null;
       const complete = !!nodes && nodes.size <= 500;
       const activeNodes = complete ? nodes!.docs.filter(n => n.get("estado") !== "inactivo") : [];
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         id: link.id, nombre: String(client.get("nombreCliente") || owner.get("nombre") || "Red vinculada"),
         categoria: category, estado: "activa", accesoCompartido: complete,
         red: complete ? tree : [],
-        aviso: !source ? "No se pudo identificar una campaña única del propietario para esta categoría." : !complete ? "La red supera el límite de consulta inicial de 500 nodos." : undefined,
+        aviso: !source ? "El propietario tiene varias campañas posibles. Debe seleccionar explícitamente cuál red compartir." : !complete ? "La red supera el límite de consulta inicial de 500 nodos." : undefined,
       };
     }));
     return NextResponse.json({ vinculaciones: rows.filter(Boolean) }, { headers: { "Cache-Control": "no-store" } });
