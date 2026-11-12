@@ -472,6 +472,9 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [leaderFilter, setLeaderFilter] = useState("");
   const [leaderSort, setLeaderSort] = useState<"votos" | "nombre" | "estimado" | "calificacion">("votos");
   const [leaderPageSize, setLeaderPageSize] = useState(12);
+  const activeLinkedNetworks = linkedNetworks.filter(n => n.estado === "activa");
+  const withdrawnLinkedIds = new Set(linkedNetworks.filter(n => n.estado === "retirada").map(n => n.id));
+  const isWithdrawnLinked = (id: string) => id.startsWith("linked:") && withdrawnLinkedIds.has(id.split(":")[1]);
   const selectedLinked = linkedFocus ? linkedNetworks.find(n => n.id === linkedFocus.networkId) : null;
   const linkedNodesAtLevel = selectedLinked ? selectedLinked.red.filter(n => linkedFocus?.nodeId ? n.padreId === linkedFocus.nodeId : !n.padreId || !selectedLinked.red.some(parent => parent.id === n.padreId)) : [];
   const linkedRootNodes = !leaderMode && !focusId && !linkedFocus ? linkedNetworks.map(network => ({
@@ -484,7 +487,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     ...n, id: `linked:${selectedLinked.id}:${n.id}`, padreId: n.padreId || null,
     nivel: n.nivel + 1, estado: "activo",
   } as Nodo)) : [];
-  const displayedChildren = (linkedFocus ? linkedChildNodes : [...children, ...linkedRootNodes]).map(n => n.id.startsWith("linked:") && linkedRatings[n.id] !== undefined ? {...n, puntuacion: linkedRatings[n.id]} : n);
+  const displayedChildren = (linkedFocus ? linkedChildNodes : [...children, ...linkedRootNodes]).map(n => n.id.startsWith("linked:") && !isWithdrawnLinked(n.id) && linkedRatings[n.id] !== undefined ? {...n, puntuacion: linkedRatings[n.id]} : n);
   useEffect(() => {
     if (!clienteId || !campanaId || leaderMode) { setLinkedRatings({}); return; }
     return onSnapshot(collection(db, "clientes", clienteId, "campanas", campanaId, "calificacionesRedesVinculadas"), snap => {
@@ -706,7 +709,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     if (globalSearch.trim().length < 2) { setGlobalResults([]); setLinkedSearchResults([]); setGlobalSearching(false); return; }
     setGlobalSearching(true);
     const words = globalSearch.trim().toLocaleLowerCase("es").split(/\\s+/).filter(Boolean);
-    setLinkedSearchResults(linkedNetworks.flatMap(network => [
+    setLinkedSearchResults(activeLinkedNetworks.flatMap(network => [
       { networkId: network.id, nodeId: null, nombre: network.nombre, nivel: 2 },
       ...network.red.map(n => ({ networkId: network.id, nodeId: n.id, nombre: `${n.nombre} ${n.apellido}`.trim(), nivel: Number(n.nivel || 1) + 1 })),
     ].filter(item => words.every(word => item.nombre.toLocaleLowerCase("es").includes(word)))) .slice(0, 100));
@@ -716,7 +719,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
         .finally(() => { if (searchSeq.current === seq) setGlobalSearching(false); });
     }, 300);
     return () => clearTimeout(timer);
-  }, [globalSearch, lookupNodes, linkedNetworks]);
+  }, [globalSearch, lookupNodes, activeLinkedNetworks]);
 
   useEffect(() => {
     if (!movePicker || destinationSearch.trim().length < 2) { setDestinationResults([]); return; }
@@ -906,7 +909,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   }, [clienteId, campanaId]);
   const linkedStats = useMemo(() => {
     const all: Record<string, { votos: number; directos: number; profundidad: number }> = {};
-    for (const network of linkedNetworks) {
+    for (const network of activeLinkedNetworks) {
       const byParent = new Map<string, typeof network.red>();
       const ids = new Set(network.red.map(n => n.id));
       for (const n of network.red) {
@@ -947,14 +950,14 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       }
     }
     return all;
-  }, [linkedNetworks]);
+  }, [activeLinkedNetworks]);
   const statsFor = (n: Nodo) => isLinkedNode(n.id) ? linkedStats[n.id] || { votos: 0, directos: 0, profundidad: 0 } : networkStats[n.id] || { votos: 1, directos: 0, profundidad: 0 };
   const [rootTotals, setRootTotals] = useState({ votos: 0, estimados: 0, directos: 0, profundidad: 0 });
   const estimateGap = (n: Nodo) => Number(n.estimacionVotos || 0) - statsFor(n).votos;
   // Las vinculaciones son ramas virtuales: se suman solo sus raíces, nunca cada descendiente.
   const combinedRootTotals = useMemo(() => {
     if (leaderMode) return rootTotals;
-    const linkedRoots = linkedNetworks.map(network => ({
+    const linkedRoots = activeLinkedNetworks.map(network => ({
       network,
       stats: linkedStats[`linked:${network.id}`],
       roots: network.red.filter(n => !n.padreId || !network.red.some(parent => parent.id === n.padreId)),
@@ -965,8 +968,8 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       directos: rootTotals.directos + linkedRoots.length,
       profundidad: Math.max(rootTotals.profundidad, ...linkedRoots.map(item => 1 + (item.stats?.profundidad || 0))),
     };
-  }, [leaderMode, rootTotals, linkedNetworks, linkedStats]);
-  const linkedRootMeetings = !leaderMode ? linkedNetworks.reduce((sum, network) => {
+  }, [leaderMode, rootTotals, activeLinkedNetworks, linkedStats]);
+  const linkedRootMeetings = !leaderMode ? activeLinkedNetworks.reduce((sum, network) => {
     const roots = network.red.filter(n => !n.padreId || !network.red.some(parent => parent.id === n.padreId));
     return sum + roots.reduce((s, n) => s + Number(n.votosRealesSubarbol || 0), 0);
   }, 0) : 0;
@@ -976,7 +979,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     estimados: !leaderMode && Number(campanas.find(c => c.id === campanaId)?.metaVotos || 0) > 0 ? Number(campanas.find(c => c.id === campanaId)?.metaVotos) : totals.estimados,
     registros: totals.registros + linkedRootMeetings,
   };
-  const displayedMetricsReady = metricsReady || (!leaderMode && linkedNetworks.length > 0);
+  const displayedMetricsReady = metricsReady || (!leaderMode && activeLinkedNetworks.length > 0);
 
   const linkedOwner = linkedFocus && selectedLinked ? ({
     id: `linked:${selectedLinked.id}`, nombre: selectedLinked.nombre, apellido: "",
@@ -987,7 +990,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const linkedCurrent = selectedLinked?.red.find(n=>n.id===linkedFocus?.nodeId);
   const linkedTitle = linkedFocus ? (linkedCurrent ? `${linkedCurrent.nombre} ${linkedCurrent.apellido}` : selectedLinked?.nombre || "Red vinculada") : "";
   const graphFocus = linkedFocus ? (linkedCurrent ? ({...linkedCurrent, id: `linked:${linkedFocus.networkId}:${linkedCurrent.id}`, nivel: Number(linkedCurrent.nivel || 1) + 1, estado: "activo"} as Nodo) : linkedOwner) : focusNode;
-  const linkedTotalVotes = (n: Nodo) => isLinkedNode(n.id) ? Number(n.votosRealesSubarbol || 0) : statsFor(n).votos;
+  const linkedTotalVotes = (n: Nodo) => isWithdrawnLinked(n.id) ? 0 : isLinkedNode(n.id) ? Number(n.votosRealesSubarbol || 0) : statsFor(n).votos;
   const graph = <section className={`flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${fullscreen ? "fixed inset-0 z-40 rounded-none" : ""}`}>
     <div className="flex-1 overflow-auto bg-[#f4faff] p-4" style={{ minHeight: fullscreen ? 0 : 420 }}>
       <div className="w-full">
@@ -1046,8 +1049,8 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
         </aside>
         </div>
         <div aria-hidden="true" className="mx-auto h-9 w-[3px] rounded-full bg-sky-500" />
-        {childrenLoading && !linkedFocus && !linkedRootNodes.length ? <p className="p-10 text-center text-sm">Cargando nodos...</p> : <div className="relative grid gap-x-3 gap-y-6 pt-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{visibleChildren.length > 0 && <div aria-hidden="true" className="pointer-events-none absolute top-0 hidden h-[3px] rounded-full bg-sky-500 xl:block" style={{left:"10%",width:`${Math.max(50, (Math.min(visibleChildren.length,5)-0.5)*20)-10}%`}} />}{visibleChildren.map(n => <article key={n.id} className={`relative min-w-0 rounded-[20px] border-2 p-3 text-center shadow-[0_6px_20px_rgba(20,90,140,.08)] transition hover:shadow-lg ${n.multinodo !== false ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-500" : "border-sky-300 bg-sky-50/60 hover:border-sky-500"}`}>
-<div aria-hidden="true" className="pointer-events-none absolute -top-5 left-1/2 hidden h-5 w-[3px] -translate-x-1/2 bg-sky-500 xl:block" /><div className="flex justify-between text-[10px] font-bold text-sky-500"><span>Nivel {n.nivel} · {n.multinodo !== false ? "● Crea red" : "● Sin red"}</span><button onClick={()=>isLinkedNode(n.id) ? navigateLinked(n.id) : setFocusId(n.id)} className="inline-flex items-center gap-2 rounded-xl border-2 border-sky-800 bg-sky-700 px-3 py-2 text-xs font-extrabold text-white shadow-md shadow-sky-900/20 transition hover:scale-[1.03] hover:bg-sky-800 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600">Ver mi red <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-sky-800 shadow-sm">➜</span></button></div>
+        {childrenLoading && !linkedFocus && !linkedRootNodes.length ? <p className="p-10 text-center text-sm">Cargando nodos...</p> : <div className="relative grid gap-x-3 gap-y-6 pt-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{visibleChildren.length > 0 && <div aria-hidden="true" className="pointer-events-none absolute top-0 hidden h-[3px] rounded-full bg-sky-500 xl:block" style={{left:"10%",width:`${Math.max(50, (Math.min(visibleChildren.length,5)-0.5)*20)-10}%`}} />}{visibleChildren.map(n => <article key={n.id} className={`relative min-w-0 rounded-[20px] border-2 p-3 text-center shadow-[0_6px_20px_rgba(20,90,140,.08)] transition hover:shadow-lg ${isWithdrawnLinked(n.id) ? "border-slate-300 bg-slate-100 grayscale opacity-65" : n.multinodo !== false ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-500" : "border-sky-300 bg-sky-50/60 hover:border-sky-500"}`}>
+<div aria-hidden="true" className="pointer-events-none absolute -top-5 left-1/2 hidden h-5 w-[3px] -translate-x-1/2 bg-sky-500 xl:block" /><div className="flex justify-between text-[10px] font-bold text-sky-500"><span>Nivel {n.nivel} · {n.multinodo !== false ? "● Crea red" : "● Sin red"}</span><button onClick={()=>isLinkedNode(n.id) ? navigateLinked(n.id) : setFocusId(n.id)} disabled={isWithdrawnLinked(n.id)} className="inline-flex items-center gap-2 rounded-xl border-2 border-sky-800 bg-sky-700 px-3 py-2 text-xs font-extrabold text-white shadow-md shadow-sky-900/20 transition hover:scale-[1.03] hover:bg-sky-800 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600">{isWithdrawnLinked(n.id) ? "Red retirada" : "Ver mi red"} <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-sky-800 shadow-sm">➜</span></button></div>
 <div className="mt-2 flex items-center gap-2 text-left"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-sky-300 bg-sky-50 text-sm font-black text-sky-700">{n.fotoUrl?<img src={n.fotoUrl} alt={fullName(n)} className="h-full w-full object-cover" />:`${(n.nombre?.[0]||"L").toUpperCase()}${(n.apellido?.[0]||"").toUpperCase()}`}</div><div className="min-w-0 flex-1"><button onClick={()=>setFocusId(n.id)} title={fullName(n)} className="block w-full truncate text-left text-xs font-extrabold text-slate-900 hover:text-sky-700">{fullName(n)}</button><p className="truncate text-[9px] text-slate-500" title={n.email}>{tag(n.etiquetaId)?.nombre||"Líder"} · {n.email}</p><button onClick={()=>{if(n.nivel!==2)return;setRatingNode(n);setRatingValue(n.puntuacion??5);}} disabled={n.nivel!==2} title={n.nivel===2?"Calificar líder de nivel 2":"Solo se califican líderes de nivel 2"} className="mt-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style={{backgroundColor:n.puntuacion==null?"#f1f5f9":`hsl(${Math.round((Math.max(1,Math.min(10,Number(n.puntuacion)))-1)/9*125)} 75% 92%)`,color:n.puntuacion==null?"#64748b":`hsl(${Math.round((Math.max(1,Math.min(10,Number(n.puntuacion)))-1)/9*125)} 75% 30%)`}}>★ {n.puntuacion??"—"}/10 ✎</button></div><div className="shrink-0 space-y-1 text-right"><div className="animate-pulse rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-1 shadow-[0_0_12px_rgba(16,185,129,.20)]"><strong className="block text-lg font-black leading-none text-emerald-800">{statsFor(n).votos.toLocaleString("es-CO")}</strong><span className="text-[9px] text-slate-500">Votos</span></div><div className="rounded-lg border border-violet-300 bg-violet-100 px-2 py-1"><strong className="block text-sm font-black leading-none text-violet-800">{statsFor(n).directos}×{statsFor(n).profundidad}</strong><span className="text-[9px] text-slate-500">Matriz</span></div></div></div>
 {(() => {const estimated=Number(n.estimacionVotos||0);const pct=estimated>0?Math.round(statsFor(n).votos/estimated*100):0;return <div className="mt-2"><div className="flex justify-between text-[10px] text-slate-500"><span>Avance</span><strong>{estimated>0?`${pct}%`:"Sin meta"}</strong></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400" style={{width:`${Math.min(100,Math.max(0,pct))}%`}} /></div></div>})()}
 <div className="mt-2 grid grid-cols-3 gap-1 text-left">{[["Estimado",Number(n.estimacionVotos||0)],["Diferencia",estimateGap(n)],["Reuniones",Number(n.votosRealesSubarbol||0)]].map(([label,value])=><div key={String(label)} className={`min-w-0 rounded-lg border p-1.5 ${label === "Estimado" ? "border-amber-200 bg-amber-50 text-amber-900" : label === "Diferencia" ? "border-violet-200 bg-violet-50 text-violet-900" : "border-cyan-200 bg-cyan-50 text-cyan-900"}`}><strong className="block truncate text-xs font-black">{Number(value).toLocaleString("es-CO")}</strong><span className="text-[9px] text-slate-500">{label}</span></div>)}</div>
