@@ -94,13 +94,30 @@ export async function PATCH(request: NextRequest) {
       if (snap.get("estado") !== "pendiente" || (snap.get("expiraEn")?.toMillis?.() || 0) < Date.now()) return { status: 409, error: "La invitación ya no está disponible." };
       if (decision === "rechazar") { tx.update(invitation, { estado: "rechazada", respondidaEn: FieldValue.serverTimestamp() }); return { estado: "rechazada" }; }
       const categoria = snap.get("categoria") as string;
+      const recipientClientId = String(ctx.user.get("clienteId") || "");
+      if (ctx.user.get("rol") !== "cliente_admin" || !recipientClientId) return { status: 403, error: "La vinculación requiere una cuenta de cliente con red propia." };
+      const recipientClientRef = ctx.db.doc(`clientes/${recipientClientId}`);
+      const sourceClientRef = ctx.db.doc(`clientes/${snap.get("clienteId")}`);
+      const sourceCampaignRef = ctx.db.doc(`clientes/${snap.get("clienteId")}/campanas/${snap.get("campanaId")}`);
       const owner = ctx.db.doc(`vinculacionesPorUsuario/${ctx.uid}/categorias/${categoria}`);
-      const current = await tx.get(owner);
+      const [recipientClient, sourceClient, sourceCampaign, current] = await Promise.all([
+        tx.get(recipientClientRef), tx.get(sourceClientRef), tx.get(sourceCampaignRef), tx.get(owner),
+      ]);
+      if (!recipientClient.exists || recipientClient.get("planActivo") === false || recipientClient.get("estado") === "inactivo") return { status: 403, error: "Tu cuenta de cliente no está activa." };
+      if (!sourceClient.exists || sourceClient.get("planActivo") === false || sourceClient.get("estado") === "inactivo" || !sourceCampaign.exists) return { status: 409, error: "La campaña que invita ya no está disponible." };
+      if (String(snap.get("clienteId")) === recipientClientId) return { status: 409, error: "No puedes vincularte a una campaña de tu propio cliente." };
       if (current.exists && ["activa", "pendiente_activacion"].includes(String(current.get("estado")))) return { status: 409, error: "Ya tienes una vinculación activa en esta categoría electoral." };
-      // Reservar la categoría sin otorgar acceso a datos hasta implementar la etapa 3.
-      tx.set(owner, { invitacionId: id, clienteId: snap.get("clienteId"), campanaId: snap.get("campanaId"), categoria, estado: "pendiente_activacion", creadoEn: FieldValue.serverTimestamp() });
-      tx.update(invitation, { estado: "aceptada_pendiente_activacion", destinatarioUid: ctx.uid, respondidaEn: FieldValue.serverTimestamp(), accesoCompartido: false });
-      return { estado: "aceptada_pendiente_activacion" };
+      // La aceptación es real y auditable; la consulta de datos compartidos sigue deshabilitada.
+      const linkRef = ctx.db.doc(`vinculacionesCampana/${id}`);
+      tx.set(owner, { invitacionId: id, clienteId: snap.get("clienteId"), campanaId: snap.get("campanaId"), categoria, estado: "activa", accesoCompartido: false, creadoEn: FieldValue.serverTimestamp() });
+      tx.create(linkRef, {
+        invitacionId: id, propietarioUid: ctx.uid, clientePropietarioId: recipientClientId,
+        clienteReceptorId: snap.get("clienteId"), campanaReceptoraId: snap.get("campanaId"),
+        categoria, estado: "activa", accesoCompartido: false,
+        creadaEn: FieldValue.serverTimestamp(),
+      });
+      tx.update(invitation, { estado: "aceptada", destinatarioUid: ctx.uid, respondidaEn: FieldValue.serverTimestamp(), accesoCompartido: false });
+      return { estado: "aceptada", accesoCompartido: false };
     });
     if ("error" in result) return fail(result.error!, result.status!);
     return NextResponse.json(result);
