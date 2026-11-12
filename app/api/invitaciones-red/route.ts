@@ -97,7 +97,7 @@ export async function PATCH(request: NextRequest) {
         const categoria = String(snap.get("categoria") || "");
         const ownerRef = ctx.db.doc(`vinculacionesPorUsuario/${ctx.uid}/categorias/${categoria}`);
         const linkRef = ctx.db.doc(`vinculacionesCampana/${id}`);
-        const [owner, link] = await Promise.all([tx.get(ownerRef), tx.get(linkRef)]);
+        const [owner, link, ownerHistory] = await Promise.all([tx.get(ownerRef), tx.get(linkRef), tx.get(ctx.db.doc(`clientes/${String(ctx.user.get("clienteId"))}`))]);
         if (!owner.exists || owner.get("estado") !== "activa" || owner.get("invitacionId") !== id ||
             !link.exists || link.get("estado") !== "activa" || link.get("propietarioUid") !== ctx.uid ||
             link.get("clientePropietarioId") !== ctx.user.get("clienteId") ||
@@ -105,7 +105,6 @@ export async function PATCH(request: NextRequest) {
             link.get("campanaReceptoraId") !== snap.get("campanaId")) {
           return { status: 409, error: "No se encontró una vinculación activa y consistente." };
         }
-        const ownerHistory = await tx.get(ctx.db.doc(`clientes/${String(ctx.user.get("clienteId"))}`));
         const historicName = String(ownerHistory.get("nombreCliente") || ctx.user.get("nombre") || "Red desvinculada");
         // Revocar el acceso y liberar la categoría en una sola transacción.
         tx.update(ownerRef, { estado: "retirada", accesoCompartido: false, retiradaEn: FieldValue.serverTimestamp() });
