@@ -105,7 +105,7 @@ export async function PATCH(request: NextRequest) {
             link.get("campanaReceptoraId") !== snap.get("campanaId")) {
           return { status: 409, error: "No se encontró una vinculación activa y consistente." };
         }
-        const historicName = String(ownerHistory.get("nombreCliente") || ctx.user.get("nombre") || "Red desvinculada");
+        const historicName = String((ownerHistory.exists ? ownerHistory.get("nombreCliente") : "") || ctx.user.get("nombre") || "Red desvinculada");
         // Revocar el acceso y liberar la categoría en una sola transacción.
         tx.update(ownerRef, { estado: "retirada", accesoCompartido: false, retiradaEn: FieldValue.serverTimestamp() });
         tx.update(linkRef, { estado: "retirada", accesoCompartido: false, nombreHistorico: historicName, retiradaEn: FieldValue.serverTimestamp() });
