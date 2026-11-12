@@ -42,6 +42,8 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [childrenLoading, setChildrenLoading] = useState(false);
   const [branchError, setBranchError] = useState("");
   const [directory, setDirectory] = useState<Nodo[]>([]);
+  const [linkedNetworks, setLinkedNetworks] = useState<Array<{ id: string; nombre: string; categoria: string; estado: string; accesoCompartido: boolean }>>([]);
+  const [linkedLoading, setLinkedLoading] = useState(false);
   const [tableRootExpanded, setTableRootExpanded] = useState(false);
   const [tableExpandedIds, setTableExpandedIds] = useState<string[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<DocumentSnapshot | null>(null);
@@ -105,6 +107,22 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const municipios = useMemo(() => Object.keys(catalogo[form.departamento] || {}).sort((a,b) => a.localeCompare(b,"es")), [catalogo, form.departamento]);
   useEffect(() => { let active = true; void get(ref(rtdb, "MUNICIPIOPUESTOS")).then(s => { if (active) setCatalogo(s.exists() ? s.val() : {}); }).catch(() => { if (active) setCatalogoError("No fue posible cargar departamentos y municipios. Revisa los permisos de MUNICIPIOPUESTOS."); }); return () => { active = false; }; }, []);
 
+  useEffect(() => {
+    if (!clienteId || !campanaId || leaderMode || !auth.currentUser) { setLinkedNetworks([]); return; }
+    let active = true;
+    setLinkedLoading(true);
+    void (async () => {
+      try {
+        const token = await auth.currentUser!.getIdToken();
+        const response = await fetch(`/api/redes-vinculadas?campanaId=${encodeURIComponent(campanaId)}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "No se pudieron cargar las redes vinculadas.");
+        if (active) setLinkedNetworks(data.vinculaciones || []);
+      } catch (error) { if (active) notify(error instanceof Error ? error.message : "No se pudieron cargar las redes vinculadas."); }
+      finally { if (active) setLinkedLoading(false); }
+    })();
+    return () => { active = false; };
+  }, [clienteId, campanaId, leaderMode]);
   const nodesRef = useCallback(() => collection(db, "clientes", clienteId, "campanas", campanaId, "nodos"), [clienteId, campanaId]);
   const peopleRef = useCallback((owner: string | null) => owner ? collection(db, "clientes", clienteId, "campanas", campanaId, "nodos", owner, "personas") : collection(db, "clientes", clienteId, "campanas", campanaId, "personasRaiz"), [clienteId, campanaId]);
   const ownerName = peopleOwner ? (focusNode?.id === peopleOwner ? fullName(focusNode) : directory.find(n => n.id === peopleOwner) ? fullName(directory.find(n => n.id === peopleOwner)!) : `Nodo ${peopleOwner.slice(0, 8)}`) : gerente;
@@ -849,6 +867,19 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
 
   const graph = <section className={`flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${fullscreen ? "fixed inset-0 z-40 rounded-none" : ""}`}>
     <div className="flex-1 overflow-auto bg-[#f4faff] p-4" style={{ minHeight: fullscreen ? 0 : 420 }}>
+      {!leaderMode && (linkedLoading || linkedNetworks.length > 0) && <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+        <h3 className="text-sm font-bold text-emerald-950">Redes vinculadas a mi campaña</h3>
+        <p className="mt-1 text-xs text-emerald-900">Personas que aceptaron unirse con su propia red. Conservan la propiedad de sus datos.</p>
+        {linkedLoading && <p className="mt-2 text-xs">Consultando vinculaciones…</p>}
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {linkedNetworks.map(network => <div key={network.id} className="rounded-xl border border-emerald-200 bg-white p-3 shadow-sm">
+            <div className="font-bold text-slate-900">{network.nombre}</div>
+            <div className="mt-1 text-xs text-slate-600">Campaña: {network.categoria}</div>
+            <div className="mt-2 text-xs font-semibold text-emerald-700">✓ Vinculación aceptada</div>
+            <div className="mt-1 text-xs text-slate-500">{network.accesoCompartido ? "Acceso a red habilitado" : "Vista completa de la red pendiente de habilitación segura"}</div>
+          </div>)}
+        </div>
+      </div>}
       <div className="w-full">
         <div className="relative grid grid-cols-1 items-start justify-items-center gap-3 xl:grid-cols-[minmax(0,1fr)_300px_minmax(0,1fr)] xl:gap-4">
         <div className="relative w-full max-w-[380px] min-w-0 self-start rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-start-1 xl:row-start-1 xl:justify-self-start">
