@@ -262,7 +262,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo crear la invitación.");
-      const url = `${window.location.origin}/invitaciones`;
+      const url = `https://autoridad-politica-web--autoridadpolitica.us-central1.hosted.app/invitaciones?invitacion=${encodeURIComponent(data.id)}`;
       const campaign = campanas.find(c => c.id === campanaId)?.nombreCampana || "mi campaña";
       const message = `Te han invitado a formar parte de mi grupo de trabajo en ${campaign}. Inicia sesión en Autoridad Política y revisa tu invitación: ${url}. La vinculación requiere tu aceptación y no comparte datos hasta su activación.`;
       const whatsapp = `https://wa.me/${data.telefono.startsWith("57") ? data.telefono : `57${data.telefono}`}?text=${encodeURIComponent(message)}`;
