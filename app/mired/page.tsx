@@ -472,10 +472,10 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [leaderFilter, setLeaderFilter] = useState("");
   const [leaderSort, setLeaderSort] = useState<"votos" | "nombre" | "estimado" | "calificacion">("votos");
   const [leaderPageSize, setLeaderPageSize] = useState(12);
-  const activeLinkedNetworks = linkedNetworks.filter(n => n.estado === "activa");
+  const activeLinkedNetworks = useMemo(() => linkedNetworks.filter(n => n.estado === "activa"), [linkedNetworks]);
   const withdrawnLinkedIds = new Set(linkedNetworks.filter(n => n.estado === "retirada").map(n => n.id));
   const isWithdrawnLinked = (id: string) => id.startsWith("linked:") && withdrawnLinkedIds.has(id.split(":")[1]);
-  const selectedLinked = linkedFocus ? linkedNetworks.find(n => n.id === linkedFocus.networkId) : null;
+  const selectedLinked = linkedFocus ? activeLinkedNetworks.find(n => n.id === linkedFocus.networkId) : null;
   const linkedNodesAtLevel = selectedLinked ? selectedLinked.red.filter(n => linkedFocus?.nodeId ? n.padreId === linkedFocus.nodeId : !n.padreId || !selectedLinked.red.some(parent => parent.id === n.padreId)) : [];
   const linkedRootNodes = !leaderMode && !focusId && !linkedFocus ? linkedNetworks.map(network => ({
     id: `linked:${network.id}`, nombre: network.nombre, apellido: "", padreId: null,
@@ -504,11 +504,12 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   };
   const goLinkedUp = () => {
     if (!linkedFocus) return;
-    const network = linkedNetworks.find(n=>n.id===linkedFocus.networkId);
+    const network = activeLinkedNetworks.find(n=>n.id===linkedFocus.networkId);
     const current = network?.red.find(n=>n.id===linkedFocus.nodeId);
     if (!linkedFocus.nodeId || !current || !current.padreId) setLinkedFocus(null);
     else setLinkedFocus({networkId: linkedFocus.networkId,nodeId:current.padreId});
   };
+  useEffect(() => { if (linkedFocus && !activeLinkedNetworks.some(n => n.id === linkedFocus.networkId)) setLinkedFocus(null); }, [linkedFocus, activeLinkedNetworks]);
   const filteredLeaders = displayedChildren.filter(n => [fullName(n), n.email, n.identificacion, n.ciudad, n.departamento, tag(n.etiquetaId)?.nombre].join(" ").toLocaleLowerCase("es").includes(leaderFilter.trim().toLocaleLowerCase("es"))).sort((a,b) => leaderSort === "nombre" ? fullName(a).localeCompare(fullName(b),"es") : leaderSort === "estimado" ? Number(b.estimacionVotos || 0) - Number(a.estimacionVotos || 0) : leaderSort === "calificacion" ? Number(b.puntuacion || 0) - Number(a.puntuacion || 0) : (networkStats[b.id]?.votos || 1) - (networkStats[a.id]?.votos || 1));
   const childrenPages = Math.max(1, Math.ceil(filteredLeaders.length / leaderPageSize));
   const visibleChildren = filteredLeaders.slice((childrenPage - 1) * leaderPageSize, childrenPage * leaderPageSize);
