@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   try {
     const ctx = await context(request);
     if (!ctx) return fail("Inicia sesión con un correo verificado.", 401);
-    const snap = await ctx.db.collection("invitacionesRed").where("destinatarioEmail", "==", ctx.email).limit(100).get();
+    const snap = await ctx.db.collection("invitacionesRed").where("destinatarioUid", "==", ctx.uid).limit(100).get();
     const now = Date.now();
     return NextResponse.json({ invitaciones: snap.docs.map(d => {
       const x = d.data(), expired = x.expiraEn?.toMillis?.() < now;
@@ -56,17 +56,17 @@ export async function POST(request: NextRequest) {
     if (email === ctx.email) return fail("No puedes invitarte a tu propia campaña.", 400);
     const [client, campaign] = await Promise.all([ctx.db.doc(`clientes/${clienteId}`).get(), ctx.db.doc(`clientes/${clienteId}/campanas/${campanaId}`).get()]);
     if (!client.exists || client.get("planActivo") === false || client.get("estado") === "inactivo" || !campaign.exists) return fail("Campaña no disponible.", 403);
-    const category = categoryOf(campaign.get("cargoAspirado") || campaign.get("cargo") || campaign.get("tipoCampana") || client.get("cargoAspirado"));
+    const category = categoryOf(campaign.get("corporacion") || campaign.get("cargoAspirado") || campaign.get("cargo") || campaign.get("tipoCampana") || client.get("corporacion") || client.get("cargoAspirado"));
     if (!category) return fail("Configura el cargo electoral de la campaña antes de invitar.", 422);
     const id = randomBytes(24).toString("hex");
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await ctx.db.doc(`invitacionesRed/${id}`).create({
       emisorUid: ctx.uid, emisorNombre: String(ctx.user.get("nombre") || client.get("nombreCliente") || "Administrador"),
-      destinatarioEmail: email, clienteId, campanaId, campanaNombre: String(campaign.get("nombreCampana") || client.get("nombreCampana") || "Campaña"),
+      destinatarioEmail: email, destinatarioUid: recipientUid, destinatarioTelefono: phone, clienteId, campanaId, campanaNombre: String(campaign.get("nombreCampana") || client.get("nombreCampana") || "Campaña"),
       categoria: category, estado: "pendiente", accesoCompartido: false,
       creadoEn: FieldValue.serverTimestamp(), expiraEn: expires,
     });
-    return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category }, { status: 201 });
+    return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category, telefono: phone }, { status: 201 });
   } catch (error) { console.error("Invitaciones POST", error); return fail("No fue posible crear la invitación.", 503); }
 }
 export async function PATCH(request: NextRequest) {
@@ -79,7 +79,7 @@ export async function PATCH(request: NextRequest) {
     const invitation = ctx.db.doc(`invitacionesRed/${id}`);
     const result = await ctx.db.runTransaction(async tx => {
       const snap = await tx.get(invitation);
-      if (!snap.exists || snap.get("destinatarioEmail") !== ctx.email) return { status: 404, error: "Invitación no encontrada." };
+      if (!snap.exists || snap.get("destinatarioUid") !== ctx.uid) return { status: 404, error: "Invitación no encontrada." };
       if (snap.get("estado") !== "pendiente" || (snap.get("expiraEn")?.toMillis?.() || 0) < Date.now()) return { status: 409, error: "La invitación ya no está disponible." };
       if (decision === "rechazar") { tx.update(invitation, { estado: "rechazada", respondidaEn: FieldValue.serverTimestamp() }); return { estado: "rechazada" }; }
       const categoria = snap.get("categoria") as string;
