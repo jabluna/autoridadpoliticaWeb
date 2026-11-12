@@ -34,8 +34,29 @@ export async function GET(request: NextRequest) {
           !client.exists || client.get("estado") === "inactivo" ||
           !reservation.exists || reservation.get("estado") !== "activa" || reservation.get("invitacionId") !== link.id ||
           !invite.exists || invite.get("estado") !== "aceptada" || invite.get("destinatarioUid") !== ownerUid) return null;
-      // No expose contact information through this listing.
-      return { id: link.id, nombre: String(client.get("nombreCliente") || owner.get("nombre") || "Red vinculada"), categoria: category, estado: "activa", accesoCompartido: link.get("accesoCompartido") === true };
+      // Lectura mediada por servidor: nunca se entregan rutas de Firestore para acceso directo.
+      const campaigns = await db.collection(`clientes/${ownerClientId}/campanas`).limit(50).get();
+      const sameCategory = (value: unknown) => {
+        const raw = String(value || "").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+        return raw.includes(category) || (category === "alcaldia" && raw.includes("alcald")) || (category === "gobernacion" && raw.includes("gobern")) || (category === "presidencia" && raw.includes("presiden")) || (category === "camara" && raw.includes("representante")) || (category === "concejo" && raw.includes("concejal")) || (category === "asamblea" && raw.includes("diputad"));
+      };
+      const matching = campaigns.docs.filter(d => sameCategory(d.get("corporacion") || d.get("cargoAspirado") || d.get("cargo") || d.get("tipoCampana") || client.get("corporacion") || client.get("cargoAspirado")));
+      // No asumir una campaña cuando hay varias del mismo tipo: podría exponer datos de otra campaña.
+      const source = matching.length === 1 ? matching[0] : null;
+      const nodes = source ? await db.collection(`clientes/${ownerClientId}/campanas/${source.id}/nodos`).limit(501).get() : null;
+      const complete = !!nodes && nodes.size <= 500;
+      const activeNodes = complete ? nodes!.docs.filter(n => n.get("estado") !== "inactivo") : [];
+      const tree = activeNodes.map(n => ({
+        id: n.id, padreId: String(n.get("padreId") || ""), nombre: String(n.get("nombre") || ""),
+        apellido: String(n.get("apellido") || ""), nivel: Number(n.get("nivel") || 1),
+        estimacionVotos: Number(n.get("estimacionVotos") || 0),
+      }));
+      return {
+        id: link.id, nombre: String(client.get("nombreCliente") || owner.get("nombre") || "Red vinculada"),
+        categoria: category, estado: "activa", accesoCompartido: complete,
+        red: complete ? tree : [],
+        aviso: !source ? "No se pudo identificar una campaña única del propietario para esta categoría." : !complete ? "La red supera el límite de consulta inicial de 500 nodos." : undefined,
+      };
     }));
     return NextResponse.json({ vinculaciones: rows.filter(Boolean) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { console.error("Error consultando redes vinculadas", error); return fail("No se pudieron consultar las redes vinculadas.", 503); }
