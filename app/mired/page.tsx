@@ -250,6 +250,26 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`,"_blank","noopener,noreferrer");
   };
   const notify = (text: string, success = false) => { setError(success ? "" : text); setOk(success ? text : ""); };
+  const inviteToCampaign = async () => {
+    if (!campanaId || !auth.currentUser) return notify("Selecciona primero una campaña.");
+    const email = window.prompt("Correo electrónico de la persona que deseas invitar a tu grupo de trabajo:");
+    if (!email?.trim()) return;
+    try {
+      const response = await fetch("/api/invitaciones-red", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await auth.currentUser.getIdToken()}` },
+        body: JSON.stringify({ campanaId, email: email.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo crear la invitación.");
+      const url = `${window.location.origin}/invitaciones`;
+      const campaign = campanas.find(c => c.id === campanaId)?.nombreCampana || "mi campaña";
+      const message = `Te han invitado a formar parte de mi grupo de trabajo en ${campaign}. Ingresa con el correo ${email.trim()} y revisa tu invitación: ${url}. La vinculación requiere tu aceptación y no comparte datos hasta su activación.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+      notify("Invitación creada. Comparte el mensaje abierto en WhatsApp.", true);
+    } catch (error) { notify(error instanceof Error ? error.message : "No fue posible enviar la invitación."); }
+  };
+
 
   useEffect(() => {
     let live = true;
@@ -895,7 +915,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   </section>;
 
   if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Cargando mi red...</div>;
-  return <main className="min-h-screen bg-[#f4f7f8] text-slate-800">{leaderMode && <aside className="fixed inset-y-0 left-0 z-40 hidden w-[280px] flex-col bg-[#082c2b] p-5 text-white lg:flex"><div className="border-b border-white/10 pb-5 text-lg font-bold">Autoridad Política</div><div className="mt-8 rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#082c2b]">Mi red</div><button onClick={() => void signOut(auth).then(()=>router.replace("/login"))} className="mt-auto rounded-xl border border-white/20 p-3 text-left text-sm">Cerrar sesión</button></aside>}<div className={leaderMode ? "lg:pl-[280px]" : ""}><header className="border-b border-emerald-200 bg-emerald-50"><div className="mx-auto flex max-w-none flex-wrap items-center justify-between gap-3 px-5 py-5"><div className="flex items-center gap-3"><button onClick={() => router.push("/dashboard")} className="rounded-xl border px-3 py-2">←</button><div><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Organización territorial</p><h1 className="text-2xl font-bold">Mi grupo de trabajo</h1><p className="text-xs text-slate-500">Líderes, estructura y registros de comunidad por campaña.</p></div></div><div className="flex flex-wrap gap-2">{!leaderMode && <button onClick={() => router.push("/configuracion-campana?etiquetas=1")} className="rounded-xl border px-4 py-3 text-xs font-bold">Configurar etiquetas</button>}<button onClick={() => openForm("nodo", leaderMode ? leaderRoot : null)} disabled={!campanaId || niveles < 2 || leaderMode} className="rounded-xl bg-[#073b38] px-4 py-3 text-xs font-bold text-white disabled:opacity-40">+ Crear nodo</button></div></div></header>
+  return <main className="min-h-screen bg-[#f4f7f8] text-slate-800">{leaderMode && <aside className="fixed inset-y-0 left-0 z-40 hidden w-[280px] flex-col bg-[#082c2b] p-5 text-white lg:flex"><div className="border-b border-white/10 pb-5 text-lg font-bold">Autoridad Política</div><div className="mt-8 rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#082c2b]">Mi red</div><button onClick={() => void signOut(auth).then(()=>router.replace("/login"))} className="mt-auto rounded-xl border border-white/20 p-3 text-left text-sm">Cerrar sesión</button></aside>}<div className={leaderMode ? "lg:pl-[280px]" : ""}><header className="border-b border-emerald-200 bg-emerald-50"><div className="mx-auto flex max-w-none flex-wrap items-center justify-between gap-3 px-5 py-5"><div className="flex items-center gap-3"><button onClick={() => router.push("/dashboard")} className="rounded-xl border px-3 py-2">←</button><div><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Organización territorial</p><h1 className="text-2xl font-bold">Mi grupo de trabajo</h1><p className="text-xs text-slate-500">Líderes, estructura y registros de comunidad por campaña.</p></div></div><div className="flex flex-wrap gap-2">{!leaderMode && <button onClick={() => void inviteToCampaign()} disabled={!campanaId} className="rounded-xl border border-emerald-300 bg-white px-4 py-3 text-xs font-bold text-emerald-800 disabled:opacity-50">Invitar a mi grupo de trabajo</button>}{!leaderMode && <button onClick={() => router.push("/configuracion-campana?etiquetas=1")} className="rounded-xl border px-4 py-3 text-xs font-bold">Configurar etiquetas</button>}<button onClick={() => openForm("nodo", leaderMode ? leaderRoot : null)} disabled={!campanaId || niveles < 2 || leaderMode} className="rounded-xl bg-[#073b38] px-4 py-3 text-xs font-bold text-white disabled:opacity-40">+ Crear nodo</button></div></div></header>
   <div className="mx-auto max-w-none space-y-3 px-3 py-3 sm:px-4">
     <section className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:gap-3 sm:p-3">
       <div className="flex min-w-[105px] items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2"><span className="text-xl font-black text-emerald-800">{Number.isFinite(niveles) ? niveles : "∞"}</span><span className="text-[10px] font-semibold leading-tight text-emerald-800">Niveles</span></div>
