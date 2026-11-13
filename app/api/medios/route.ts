@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     if (type === "download") {
       const collectionName = req.nextUrl.searchParams.get("collection") === "photos" ? "fotosMedios" : "archivosMedios";
       const id = req.nextUrl.searchParams.get("id") || "";
-      if (!/^[\\w-]{1,150}$/.test(id)) return fail("Archivo inválido");
+      if (!/^[\w-]{1,150}$/.test(id)) return fail("Archivo inválido");
       const record = await base(c).collection(collectionName).doc(id).get();
       if (!record.exists || !record.get("storagePath")) return fail("Archivo no encontrado",404);
       const [url] = await getStorage(app()).bucket("autoridadpolitica.firebasestorage.app").file(record.get("storagePath")).getSignedUrl({
