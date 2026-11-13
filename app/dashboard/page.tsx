@@ -1,4 +1,5 @@
 "use client";
+import { useMediosGestionAccess } from "@/components/useMediosGestionAccess";
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -52,6 +53,7 @@ type Cliente = {
 
 export default function ClienteDashboardPage() {
   const router = useRouter();
+  const {canManage:canAccessGestion}=useMediosGestionAccess();
   const [loading, setLoading] = useState(true);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [nombre, setNombre] = useState("");
@@ -237,9 +239,8 @@ export default function ClienteDashboardPage() {
     { label: "Configuración de campaña", icon: "settings", href: "/configuracion-campana" },
     { label: "Mi red", icon: "network", href: "/mired" },
     { label: "Invitaciones a campañas", icon: "users", href: "/invitaciones" },
-    { label: "Integrantes", icon: "users" },
-    { label: "Territorio", icon: "map" },
-    { label: "Estadísticas", icon: "chart" },
+    { label: "Evolución histórica", icon: "chart", href: "/historico-campana" },
+
   ];
 
   return (
@@ -303,6 +304,22 @@ export default function ClienteDashboardPage() {
                 )}
               </button>
             ))}
+            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
+              <p className="px-3 py-2 text-xs font-extrabold uppercase tracking-wider text-blue-100">Medios</p>
+              {[
+                ...(canAccessGestion ? [{ label: "Autorizaciones y gestión", href: "/medios/gestion" }] : []),
+                { label: "Medios", href: "/medios" },
+                { label: "Galería", href: "/medios/galeria" },
+              ].map(item => (
+                <button
+                  key={item.href}
+                  onClick={() => { setMenuOpen(false); router.push(item.href); }}
+                  className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </nav>
         </div>
 
@@ -478,7 +495,7 @@ export default function ClienteDashboardPage() {
 
         <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm sm:px-5">
-            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><h2 className="mt-0.5 truncate text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2><p className="text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
+            <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2"><h2 className="text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2>{(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="max-w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm"><span className="mr-2 text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Lema de campaña</span><span className="text-sm font-extrabold italic text-blue-900">“{lema}”</span></div>:null;})()}</div><p className="mt-1 text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
             <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Explorar Mi Red →</button>
           </section>
 
@@ -519,6 +536,11 @@ export default function ClienteDashboardPage() {
                     />
                   </div>
 
+                  <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Gráfica de proyección por líder</h3><p className="mt-1 text-[11px] text-slate-500">Comparación actual de los 8 líderes con mayor aporte calculado. No representa evolución histórica.</p></div><div className="flex gap-3 text-[10px] font-semibold"><span className="flex items-center gap-1 text-blue-700"><i className="h-2.5 w-2.5 rounded-sm bg-blue-600"/> Aporte de red</span><span className="flex items-center gap-1 text-amber-700"><i className="h-2.5 w-2.5 rounded-sm bg-amber-400"/> Estimado manual</span></div></div>
+                    {(()=>{const top=[...lideresResumen].sort((a,b)=>b.votos-a.votos).slice(0,8);const max=Math.max(1,...top.flatMap(l=>[l.votos,l.estimado]));return top.length?<div className="mt-4 space-y-3">{top.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr] items-center gap-3"><span title={l.nombre} className="truncate text-xs font-medium text-slate-700">{l.nombre}</span><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-9 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-9 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado}</span></div></div></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">Aún no hay líderes con datos para representar.</p>})()}
+                  </div>
+
                   <div className="mt-3 grid gap-2 md:grid-cols-3">
                     {activas.length === 0 ? (
                       <div className="md:col-span-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
@@ -550,7 +572,17 @@ export default function ClienteDashboardPage() {
                 </section></div>
                   <div className="min-w-0 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Ficha de líder</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><div className="relative w-full sm:w-[235px]"><input type="search" aria-label="Buscar líder por nombre o ciudad" placeholder="Buscar líder o ciudad..." value={busquedaLider} onChange={e=>setBusquedaLider(e.target.value)} className="w-full rounded-xl border border-sky-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />{busquedaLider.trim() && <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">{(() => {const term=busquedaLider.trim().toLocaleLowerCase("es");const matches=lideresResumen.filter(l=>`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term));return matches.length ? <>{matches.slice(0,8).map(l=><button key={l.id} type="button" onClick={()=>{setLiderSeleccionado(l.id);setBusquedaLider("");}} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"><span className="block truncate text-xs font-semibold text-slate-800">{l.nombre}</span><span className="block truncate text-[10px] text-slate-500">{l.ciudad}</span></button>)}{matches.length>8&&<p className="px-3 py-2 text-[10px] text-slate-500">Mostrando 8 de {matches.length}. Escribe más para precisar.</p>}</> : <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</p>;})()}</div>}</div></div>
-                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div></>})()}
+                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div>
+                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div><h4 className="text-sm font-bold text-slate-900">Estimado vs. votos del líder</h4><p className="mt-1 text-[11px] text-slate-500">Comparación individual de {lider.nombre}. El aporte de red es calculado, no un resultado electoral verificado.</p></div>
+                        <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-blue-800">{lider.estimado>0?porcentaje.toFixed(1)+"%":"Sin estimado"}</span>
+                      </div>
+                      {(()=>{const max=Math.max(1,lider.estimado,lider.votos);return <div className="mt-5 space-y-5">
+                        {[{label:"Estimado manual",value:lider.estimado,color:"bg-amber-400",track:"bg-amber-100",text:"text-amber-800"},{label:"Aporte calculado de votos",value:lider.votos,color:"bg-blue-600",track:"bg-blue-100",text:"text-blue-800"}].map(row=><div key={row.label}><div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-700">{row.label}</span><strong className={`text-sm tabular-nums ${row.text}`}>{row.value.toLocaleString("es-CO")}</strong></div><div className={`h-7 overflow-hidden rounded-lg ${row.track}`}><div className={`h-full rounded-lg transition-all duration-300 ${row.color}`} style={{width:`${Math.max(0,row.value/max*100)}%`}}/></div></div>)}
+                        <p className="border-t border-blue-100 pt-3 text-[11px] text-slate-600">{lider.estimado>0?(lider.votos>=lider.estimado?"El aporte calculado alcanza o supera el estimado manual.":`Faltan ${(lider.estimado-lider.votos).toLocaleString("es-CO")} aportes calculados para alcanzar el estimado manual.`):"Este líder no tiene un estimado manual registrado."}</p>
+                      </div>;})()}
+                    </div></>})()}
                   </div>
                 </section>
               </>
