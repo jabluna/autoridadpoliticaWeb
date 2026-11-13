@@ -494,7 +494,7 @@ export default function ClienteDashboardPage() {
 
         <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm sm:px-5">
-            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><h2 className="mt-0.5 truncate text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2><p className="text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
+            <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2"><h2 className="text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2>{(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="max-w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm"><span className="mr-2 text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Lema de campaña</span><span className="text-sm font-extrabold italic text-blue-900">“{lema}”</span></div>:null;})()}</div><p className="mt-1 text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
             <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Explorar Mi Red →</button>
           </section>
 
