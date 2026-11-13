@@ -1,4 +1,5 @@
 "use client";
+import { useMediosGestionAccess } from "@/components/useMediosGestionAccess";
 
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
@@ -83,6 +84,7 @@ const EMPTY_FORM = {
 
 export default function ConfiguracionCampanaPage() {
   const router = useRouter();
+  const {canManage:canAccessGestion}=useMediosGestionAccess();
 
   const [loading, setLoading] = useState(true);
   const [sidebarOpen,setSidebarOpen]=useState(false);
@@ -714,7 +716,7 @@ export default function ConfiguracionCampanaPage() {
             <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
               <p className="px-3 py-2 text-xs font-extrabold uppercase tracking-wider text-blue-100">Medios</p>
               {[
-                { label: "Autorizaciones y gestión", href: "/medios/gestion" },
+                ...(canAccessGestion ? [{ label: "Autorizaciones y gestión", href: "/medios/gestion" }] : []),
                 { label: "Medios", href: "/medios" },
                 { label: "Galería", href: "/medios/galeria" },
               ].map(item => (
