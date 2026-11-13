@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
   try {
     const c = await context(req, parseScope(req).campanaId, parseScope(req).clienteId);
     const type = req.nextUrl.searchParams.get("type") || "media";
+    if(type==="gestion" && !c.canManage)return fail("No autorizado para gestión de medios",403);
     if (type === "content") {
       const collectionName=req.nextUrl.searchParams.get("collection")==="photos"?"fotosMedios":"archivosMedios";
       const id=req.nextUrl.searchParams.get("id")||"";
