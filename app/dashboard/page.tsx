@@ -239,6 +239,7 @@ export default function ClienteDashboardPage() {
     { label: "Configuración de campaña", icon: "settings", href: "/configuracion-campana" },
     { label: "Mi red", icon: "network", href: "/mired" },
     { label: "Invitaciones a campañas", icon: "users", href: "/invitaciones" },
+    { label: "Evolución histórica", icon: "chart", href: "/historico-campana" },
 
   ];
 
