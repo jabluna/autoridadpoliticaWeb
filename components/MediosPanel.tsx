@@ -215,7 +215,7 @@ export default function MediosPanel({mode}:{mode:Mode}){
   };
   useEffect(()=>{if(mode==="gestion"&&gestionAccessChecked&&!canAccessGestion)router.replace("/medios");},[mode,gestionAccessChecked,canAccessGestion,router]);
   const title=mode==="gestion"?"Autorizaciones y gestión":mode==="galeria"?"Galería":"Medios de campaña";
-  const nav=[["Panel principal","/dashboard"],["Mi red","/mired"],["Invitaciones","/invitaciones"],["Configuración de campaña","/configuracion-campana"],...(canAccessGestion?[["Autorizaciones y gestión","/medios/gestion"]]:[]),["Medios","/medios"],["Galería","/medios/galeria"]];
+  const nav=[["Panel principal","/dashboard"],["Mi red","/mired"],["Invitaciones","/invitaciones"],["Evolución histórica","/historico-campana"],["Configuración de campaña","/configuracion-campana"],...(canAccessGestion?[["Autorizaciones y gestión","/medios/gestion"]]:[]),["Medios","/medios"],["Galería","/medios/galeria"]];
   if(mode==="gestion"&&!canAccessGestion)return <main className="flex min-h-screen items-center justify-center bg-[#f4f7fb] p-6 text-sm text-slate-600">{gestionAccessChecked?"Acceso restringido. Redirigiendo a Medios…":"Verificando permisos…"}</main>;
   return <main className="min-h-screen bg-[#f4f7fb] text-slate-900">
     {sidebarOpen&&<button aria-label="Cerrar menú" onClick={()=>setSidebarOpen(false)} className="fixed inset-0 z-40 bg-black/50 lg:hidden"/>}
