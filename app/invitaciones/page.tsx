@@ -107,7 +107,7 @@ export default function InvitacionesPage() {
             Principal
           </p>
           <nav className="space-y-1.5">
-            {[{label:"Dashboard",icon:"dashboard",href:"/dashboard",active:false},{label:"Configuración de campaña",icon:"settings",href:"/configuracion-campana",active:false},{label:"Mi red",icon:"network",href:"/mired",active:false},{label:"Invitaciones a campañas",icon:"users",href:"/invitaciones",active:true}].map((item) => (
+            {[{label:"Dashboard",icon:"dashboard",href:"/dashboard",active:false},{label:"Configuración de campaña",icon:"settings",href:"/configuracion-campana",active:false},{label:"Mi red",icon:"network",href:"/mired",active:false},{label:"Invitaciones a campañas",icon:"users",href:"/invitaciones",active:true},{label:"Evolución histórica",icon:"chart",href:"/historico-campana",active:false}].map((item) => (
               <button
                 key={item.label}
                 onClick={() => item.href && router.push(item.href)}
