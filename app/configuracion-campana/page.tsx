@@ -696,7 +696,7 @@ export default function ConfiguracionCampanaPage() {
             Principal
           </p>
           <nav className="space-y-1.5">
-            {[{label:"Dashboard",icon:"dashboard",href:"/dashboard",active:false},{label:"Configuración de campaña",icon:"settings",href:"/configuracion-campana",active:true},{label:"Mi red",icon:"network",href:"/mired",active:false},{label:"Invitaciones a campañas",icon:"users",href:"/invitaciones",active:false}].map((item) => (
+            {[{label:"Dashboard",icon:"dashboard",href:"/dashboard",active:false},{label:"Configuración de campaña",icon:"settings",href:"/configuracion-campana",active:true},{label:"Mi red",icon:"network",href:"/mired",active:false},{label:"Invitaciones a campañas",icon:"users",href:"/invitaciones",active:false},{label:"Evolución histórica",icon:"chart",href:"/historico-campana",active:false}].map((item) => (
               <button
                 key={item.label}
                 onClick={() => item.href && router.push(item.href)}
