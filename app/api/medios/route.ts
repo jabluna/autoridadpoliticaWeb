@@ -98,6 +98,17 @@ export async function POST(req: NextRequest) {
       await base(c).collection("autorizacionesMedios").doc(uid).set({activo:active,nodoId:nodeId,nombre:[node.get("nombre"),node.get("apellido")].filter(Boolean).join(" "),email:node.get("email")||"",actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()});
       return NextResponse.json({ok:true});
     }
+    if (type==="link") {
+      if (!c.canManage) return fail("No tienes permiso para publicar enlaces",403);
+      const nombre=clean(form.get("nombre")), descripcion=clean(form.get("descripcion"),500);
+      if(!nombre)return fail("Escribe un título para el enlace");
+      const raw=String(form.get("url")||"").trim();
+      let parsed:URL;try{parsed=new URL(raw);}catch{return fail("Introduce una URL válida");}
+      if(!["https:","http:"].includes(parsed.protocol)||!parsed.hostname||parsed.username||parsed.password||raw.length>2048)return fail("Solo se permiten enlaces HTTP o HTTPS válidos");
+      const ref=base(c).collection("archivosMedios").doc();
+      await ref.set({nombre,descripcion,url:parsed.toString(),tipo:"enlace",creadoPor:c.uid,creadoEn:FieldValue.serverTimestamp()});
+      return NextResponse.json({id:ref.id});
+    }
     if (type!=="media" && type!=="photo") return fail("Tipo inválido");
     if (type==="media" && !c.canManage) return fail("No tienes permiso para gestionar medios",403);
     if (type==="photo" && !c.canManage && !c.nodoId) return fail("No perteneces a la red activa",403);
@@ -127,7 +138,13 @@ export async function PATCH(req: NextRequest) {
     if (!snap.exists) return fail("No encontrado",404);
     if (!c.canManage) return fail("Solo autorizados pueden editar",403);
     const nombre=clean(body.nombre);if (!nombre) return fail("Nombre requerido");
-    await ref.update({nombre,actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()});
+    const changes:Record<string,unknown>={nombre,actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()};
+    if(type==="media"&&snap.get("tipo")==="enlace"&&body.url!==undefined){
+      let parsed:URL;try{parsed=new URL(String(body.url).trim());}catch{return fail("Enlace inválido");}
+      if(!["https:","http:"].includes(parsed.protocol)||!parsed.hostname||parsed.username||parsed.password||String(body.url).length>2048)return fail("Enlace inválido");
+      changes.url=parsed.toString();
+    }
+    await ref.update(changes);
     return NextResponse.json({ok:true});
   }catch(e){return fail(e instanceof Error?e.message:"Error",403)}
 }
