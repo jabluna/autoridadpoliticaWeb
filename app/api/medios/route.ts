@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       const uid=clean(form.get("uid")); const nodeId=clean(form.get("nodoId")); const active=form.get("activo")==="true";
       const node=await base(c).collection("nodos").doc(nodeId).get();
       if (!node.exists || node.get("uid")!==uid || node.get("estado")==="inactivo") return fail("El líder no pertenece a la red",403);
-      await base(c).collection("autorizacionesMedios").doc(uid).set({activo:active,nodoId,nombre:[node.get("nombre"),node.get("apellido")].filter(Boolean).join(" "),email:node.get("email")||"",actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()});
+      await base(c).collection("autorizacionesMedios").doc(uid).set({activo:active,nodoId:nodeId,nombre:[node.get("nombre"),node.get("apellido")].filter(Boolean).join(" "),email:node.get("email")||"",actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()});
       return NextResponse.json({ok:true});
     }
     if (type!=="media" && type!=="photo") return fail("Tipo inválido");
