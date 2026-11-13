@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const now = Date.now();
     return NextResponse.json({ invitaciones: snap.docs.map(d => {
       const x = d.data(), expired = x.expiraEn?.toMillis?.() < now;
-      return { id: d.id, campanaNombre: x.campanaNombre, categoria: x.categoria, estado: expired && x.estado === "pendiente" ? "expirada" : x.estado, emisorNombre: x.emisorNombre, expiraEn: x.expiraEn?.toDate?.()?.toISOString?.(), aceptadaEn: x.respondidaEn?.toDate?.()?.toISOString?.(), retiradaEn: x.retiradaEn?.toDate?.()?.toISOString?.() };
+      return { id: d.id, campanaNombre: x.campanaNombre, clienteId: x.clienteId, campanaId: x.campanaId, categoria: x.categoria, estado: expired && x.estado === "pendiente" ? "expirada" : x.estado, emisorNombre: x.emisorNombre, expiraEn: x.expiraEn?.toDate?.()?.toISOString?.(), aceptadaEn: x.respondidaEn?.toDate?.()?.toISOString?.(), retiradaEn: x.retiradaEn?.toDate?.()?.toISOString?.() };
     }) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { console.error("Invitaciones GET", error); return fail("No fue posible consultar las invitaciones.", 503); }
 }
