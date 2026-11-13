@@ -12,8 +12,8 @@ async function access(req:NextRequest){
  const token=await getAuth(app()).verifyIdToken(bearer.slice(7),true);
  const user=await db().doc("usuarios/"+token.uid).get();
  if(!user.exists||user.get("rol")!=="cliente_admin"||user.get("estado")==="inactivo")throw Error("Solo el propietario de campaña puede consultar este histórico");
- const id=String(user.get("clienteId")||"");if(!/^[\\w-]{1,150}$/.test(id))throw Error("Cliente inválido");
- const client=await db().doc("clientes/"+id).get();if(!client.exists||client.get("estado")==="inactivo")throw Error("Cliente inactivo");
+ const id=String(user.get("clienteId")||"").trim();if(!id||id.length>150||id.includes("/")||id==="."||id===".."||id.includes("\\0"))throw Error("Identificador de cliente inválido");
+ const client=await db().collection("clientes").doc(id).get();if(!client.exists||client.get("estado")==="inactivo")throw Error("Cliente inactivo");
  return id;
 }
 export async function GET(req:NextRequest){
