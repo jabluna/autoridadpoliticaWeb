@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const app = () => getApps()[0] ?? initializeApp({ credential: applicationDefault(), projectId: "autoridadpolitica", storageBucket: "autoridadpolitica.firebasestorage.app" });
 const db = () => getFirestore(app());
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
-type Context = { uid: string; clienteId: string; campanaId: string; owner: boolean; canManage: boolean; nodoId: string };
+type Context = { uid: string; clienteId: string; campanaId: string; owner: boolean; canManage: boolean; galleryManage: boolean; nodoId: string };
 async function identify(req: NextRequest) {
   const bearer = req.headers.get("authorization") || "";
   if (!bearer.startsWith("Bearer ")) throw Error("Autenticación requerida");
@@ -31,7 +31,7 @@ async function context(req: NextRequest, campanaId: string, clienteId: string): 
   const [campaign, client] = await Promise.all([db().doc(`clientes/${clienteId}/campanas/${campanaId}`).get(), db().doc(`clientes/${clienteId}`).get()]);
   if (!campaign.exists || !client.exists || client.get("estado") === "inactivo") throw Error("Campaña no disponible");
   const authorization = own && !isOwner ? await db().doc(`clientes/${clienteId}/campanas/${campanaId}/autorizacionesMedios/${uid}`).get() : null;
-  return { uid, clienteId, campanaId, owner: isOwner, canManage: isOwner || Boolean(authorization?.exists && authorization.get("activo") === true), nodoId: own ? String(user.get("nodoId") || "") : "" };
+  return { uid, clienteId, campanaId, owner: isOwner, galleryManage:own, canManage: isOwner || Boolean(authorization?.exists && authorization.get("activo") === true), nodoId: own ? String(user.get("nodoId") || "") : "" };
 }
 const base = (c: Context) => db().collection("clientes").doc(c.clienteId).collection("campanas").doc(c.campanaId);
 const safe = (doc: FirebaseFirestore.QueryDocumentSnapshot) => ({ id: doc.id, ...doc.data(), creadoEn: doc.get("creadoEn")?.toDate?.()?.toISOString?.() || null });
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     const c=await context(req,campanaId,clienteId);
     const type=clean(form.get("type"));
     if (type==="album") {
-      if (!c.canManage && !c.nodoId) return fail("No puedes crear álbumes",403);
+      if (!c.galleryManage) return fail("No puedes crear álbumes",403);
       const name=clean(form.get("nombre")); if (!name) return fail("Nombre requerido");
       const ref=base(c).collection("albumesMedios").doc();
       await ref.set({ nombre:name, descripcion:clean(form.get("descripcion"),500), creadoPor:c.uid, creadoEn:FieldValue.serverTimestamp() });
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     }
     if (type!=="media" && type!=="photo") return fail("Tipo inválido");
     if (type==="media" && !c.canManage) return fail("No tienes permiso para gestionar medios",403);
-    if (type==="photo" && !c.canManage && !c.nodoId) return fail("No perteneces a la red activa",403);
+    if (type==="photo" && !c.galleryManage) return fail("No perteneces a la red activa",403);
     const name=clean(form.get("nombre")); const file=form.get("file");
     if (!(file instanceof File) || !name) return fail("Nombre y archivo requeridos");
     const limit=type==="photo"?500*1024:20*1024*1024;
@@ -136,7 +136,7 @@ export async function PATCH(req: NextRequest) {
     if (!coll) return fail("Tipo inválido");
     const ref=base(c).collection(coll).doc(clean(body.id));const snap=await ref.get();
     if (!snap.exists) return fail("No encontrado",404);
-    if (!c.canManage) return fail("Solo autorizados pueden editar",403);
+    if (type==="media"?!c.canManage:!c.galleryManage) return fail("No tienes permiso para editar",403);
     const nombre=clean(body.nombre);if (!nombre) return fail("Nombre requerido");
     const changes:Record<string,unknown>={nombre,actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()};
     if(type==="media"&&snap.get("tipo")==="enlace"&&body.url!==undefined){
@@ -173,8 +173,9 @@ export async function PUT(req:NextRequest){
 export async function DELETE(req: NextRequest) {
   try {
     const body=await req.json();const c=await context(req,clean(body.campanaId),clean(body.clienteId));
-    if (!c.canManage) return fail("Solo autorizados pueden eliminar",403);
-    const type=clean(body.type), coll=type==="media"?"archivosMedios":type==="album"?"albumesMedios":type==="photo"?"fotosMedios":"";
+    
+    const type=clean(body.type);if(type==="media"?!c.canManage:!c.galleryManage)return fail("No tienes permiso para eliminar",403);
+    const coll=type==="media"?"archivosMedios":type==="album"?"albumesMedios":type==="photo"?"fotosMedios":"";
     if (!coll) return fail("Tipo inválido");
     const ref=base(c).collection(coll).doc(clean(body.id));const snap=await ref.get();
     if (!snap.exists) return fail("No encontrado",404);
