@@ -43,6 +43,15 @@ export async function GET(req: NextRequest) {
   try {
     const c = await context(req, parseScope(req).campanaId, parseScope(req).clienteId);
     const type = req.nextUrl.searchParams.get("type") || "media";
+    if (type === "content") {
+      const collectionName=req.nextUrl.searchParams.get("collection")==="photos"?"fotosMedios":"archivosMedios";
+      const id=req.nextUrl.searchParams.get("id")||"";
+      if (!/^[\w-]{1,150}$/.test(id)) return fail("Archivo inválido");
+      const record=await base(c).collection(collectionName).doc(id).get();
+      if (!record.exists||!record.get("storagePath")) return fail("Archivo no encontrado",404);
+      const [bytes]=await getStorage(app()).bucket("autoridadpolitica.firebasestorage.app").file(record.get("storagePath")).download();
+      return new NextResponse(new Uint8Array(bytes),{headers:{"Content-Type":String(record.get("tipo")||"application/octet-stream"),"Cache-Control":"private, no-store","Content-Disposition":"inline"}});
+    }
     if (type === "download") {
       const collectionName = req.nextUrl.searchParams.get("collection") === "photos" ? "fotosMedios" : "archivosMedios";
       const id = req.nextUrl.searchParams.get("id") || "";
