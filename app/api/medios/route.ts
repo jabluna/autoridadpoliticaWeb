@@ -44,6 +44,17 @@ export async function GET(req: NextRequest) {
   try {
     const c = await context(req, parseScope(req).campanaId, parseScope(req).clienteId);
     const type = req.nextUrl.searchParams.get("type") || "media";
+    if (type === "download") {
+      const collectionName = req.nextUrl.searchParams.get("collection") === "photos" ? "fotosMedios" : "archivosMedios";
+      const id = req.nextUrl.searchParams.get("id") || "";
+      if (!/^[\\w-]{1,150}$/.test(id)) return fail("Archivo inválido");
+      const record = await base(c).collection(collectionName).doc(id).get();
+      if (!record.exists || !record.get("storagePath")) return fail("Archivo no encontrado",404);
+      const [url] = await getStorage(app()).bucket().file(record.get("storagePath")).getSignedUrl({
+        action:"read",expires:Date.now()+10*60*1000
+      });
+      return NextResponse.json({url, nombre:record.get("nombreOriginal")||record.get("nombre")});
+    }
     if (type === "leaders") {
       if (!c.owner) return fail("Solo nivel 1 administra autorizaciones", 403);
       const nodes = await base(c).collection("nodos").limit(500).get();
