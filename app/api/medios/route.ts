@@ -41,6 +41,16 @@ function parseScope(req: NextRequest) {
 }
 export async function GET(req: NextRequest) {
   try {
+    if(req.nextUrl.searchParams.get("type")==="visibility"){
+      const {uid,user}=await identify(req);
+      const clienteId=String(user.get("clienteId")||"");
+      if(user.get("rol")==="cliente_admin"&&clienteId)return NextResponse.json({canManage:true});
+      if(user.get("rol")!=="red_usuario"||!clienteId)return NextResponse.json({canManage:false});
+      const campanaId=String(user.get("campanaId")||"");
+      if(!/^[\\w-]{1,150}$/.test(clienteId)||!/^[\\w-]{1,150}$/.test(campanaId))return NextResponse.json({canManage:false});
+      const permission=await db().doc(`clientes/${clienteId}/campanas/${campanaId}/autorizacionesMedios/${uid}`).get();
+      return NextResponse.json({canManage:permission.exists&&permission.get("activo")===true});
+    }
     const c = await context(req, parseScope(req).campanaId, parseScope(req).clienteId);
     const type = req.nextUrl.searchParams.get("type") || "media";
     if(type==="gestion" && !c.canManage)return fail("No autorizado para gestión de medios",403);
