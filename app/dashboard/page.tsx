@@ -301,6 +301,22 @@ export default function ClienteDashboardPage() {
                 )}
               </button>
             ))}
+            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
+              <p className="px-3 py-2 text-xs font-extrabold uppercase tracking-wider text-blue-100">Medios</p>
+              {[
+                { label: "Autorizaciones y gestión", href: "/medios/gestion" },
+                { label: "Medios", href: "/medios" },
+                { label: "Galería", href: "/medios/galeria" },
+              ].map(item => (
+                <button
+                  key={item.href}
+                  onClick={() => { setMenuOpen(false); router.push(item.href); }}
+                  className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </nav>
         </div>
 
