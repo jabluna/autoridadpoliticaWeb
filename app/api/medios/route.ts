@@ -148,6 +148,28 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ok:true});
   }catch(e){return fail(e instanceof Error?e.message:"Error",403)}
 }
+export async function PUT(req:NextRequest){
+  try{
+    const form=await req.formData();
+    const c=await context(req,clean(form.get("campanaId")),clean(form.get("clienteId")));
+    if(!c.canManage)return fail("No autorizado",403);
+    const id=clean(form.get("id"));if(!/^[\\w-]{1,150}$/.test(id))return fail("Identificador inválido");
+    const ref=base(c).collection("archivosMedios").doc(id);
+    const record=await ref.get();if(!record.exists||record.get("tipo")==="enlace")return fail("Archivo no encontrado",404);
+    const file=form.get("file");
+    if(!(file instanceof File)||!file.size||file.size>20*1024*1024)return fail("Selecciona un archivo de máximo 20 MB");
+    const nombre=clean(form.get("nombre"))||clean(record.get("nombre"));
+    const ext=clean(file.name.split(".").pop(),12).replace(/[^a-z0-9]/gi,"")||"bin";
+    const newPath=`medios/${c.clienteId}/${c.campanaId}/archivosMedios/${id}-${Date.now()}.${ext}`;
+    const bucket=getStorage(app()).bucket("autoridadpolitica.firebasestorage.app");
+    await bucket.file(newPath).save(Buffer.from(await file.arrayBuffer()),{contentType:file.type||"application/octet-stream",resumable:false,metadata:{cacheControl:"private, max-age=0"}});
+    try{
+      await ref.update({nombre,nombreOriginal:clean(file.name,250),tipo:file.type||"application/octet-stream",bytes:file.size,storagePath:newPath,actualizadoPor:c.uid,actualizadoEn:FieldValue.serverTimestamp()});
+    }catch(e){await bucket.file(newPath).delete({ignoreNotFound:true});throw e;}
+    if(record.get("storagePath"))await bucket.file(record.get("storagePath")).delete({ignoreNotFound:true}).catch(()=>{});
+    return NextResponse.json({ok:true});
+  }catch(e){return fail(e instanceof Error?e.message:"Error",403);}
+}
 export async function DELETE(req: NextRequest) {
   try {
     const body=await req.json();const c=await context(req,clean(body.campanaId),clean(body.clienteId));
