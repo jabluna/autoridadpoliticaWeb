@@ -42,7 +42,7 @@ function PhotoPreview({scope,item}:{scope:Scope;item:Entry}){
 }
 export default function MediosPanel({mode}:{mode:Mode}){
   const router=useRouter();
-  const {canManage:canAccessGestion}=useMediosGestionAccess();
+  const {canManage:canAccessGestion,checked:gestionAccessChecked}=useMediosGestionAccess();
   const [scopes,setScopes]=useState<Scope[]>([]),[scopeKey,setScopeKey]=useState("");
   const [items,setItems]=useState<Entry[]>([]),[albums,setAlbums]=useState<Entry[]>([]);
   const [leaders,setLeaders]=useState<Leader[]>([]),[authorized,setAuthorized]=useState<string[]>([]);
@@ -213,9 +213,10 @@ export default function MediosPanel({mode}:{mode:Mode}){
       setNotice("Fotografía descargada. Adjunta el archivo en la plataforma elegida.");
     }catch(e){if(e instanceof Error&&e.name!=="AbortError")setError(e.message);}
   };
-  useEffect(()=>{if(mode==="gestion"&&!canAccessGestion) { /* Acceso validado en la API y en la pantalla. */ }},[mode,canAccessGestion]);
+  useEffect(()=>{if(mode==="gestion"&&gestionAccessChecked&&!canAccessGestion)router.replace("/medios");},[mode,gestionAccessChecked,canAccessGestion,router]);
   const title=mode==="gestion"?"Autorizaciones y gestión":mode==="galeria"?"Galería":"Medios de campaña";
   const nav=[["Panel principal","/dashboard"],["Mi red","/mired"],["Invitaciones","/invitaciones"],["Configuración de campaña","/configuracion-campana"],...(canAccessGestion?[["Autorizaciones y gestión","/medios/gestion"]]:[]),["Medios","/medios"],["Galería","/medios/galeria"]];
+  if(mode==="gestion"&&!canAccessGestion)return <main className="flex min-h-screen items-center justify-center bg-[#f4f7fb] p-6 text-sm text-slate-600">{gestionAccessChecked?"Acceso restringido. Redirigiendo a Medios…":"Verificando permisos…"}</main>;
   return <main className="min-h-screen bg-[#f4f7fb] text-slate-900">
     {sidebarOpen&&<button aria-label="Cerrar menú" onClick={()=>setSidebarOpen(false)} className="fixed inset-0 z-40 bg-black/50 lg:hidden"/>}
     <aside className={`fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col bg-gradient-to-b from-[#102f77] via-[#153f9a] to-[#071e52] text-white shadow-xl transition-transform lg:translate-x-0 ${sidebarOpen?"translate-x-0":"-translate-x-full"}`}><div className="flex h-20 items-center gap-3 border-b border-white/10 px-5"><div className="rounded-2xl bg-white p-3 font-black text-blue-900">AP</div><div><p className="font-bold">Autoridad Política</p><p className="text-xs text-blue-200">Gestión de campaña</p></div><button className="ml-auto lg:hidden" onClick={()=>setSidebarOpen(false)}>✕</button></div><nav className="flex-1 space-y-1 overflow-y-auto p-4">{nav.map(([label,href],i)=><div key={href}>{href==="/medios"&&<p className="mb-2 mt-5 px-3 text-xs font-bold uppercase tracking-wider text-blue-200">Medios</p>}<button onClick={()=>{setSidebarOpen(false);router.push(href)}} className={`w-full rounded-xl px-4 py-3 text-left text-sm ${href===(mode==="gestion"?"/medios/gestion":mode==="galeria"?"/medios/galeria":"/medios")?"bg-white font-bold text-blue-900":"text-white/80 hover:bg-white/10"}`}>{label}</button></div>)}</nav></aside>
