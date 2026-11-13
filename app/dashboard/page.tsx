@@ -498,32 +498,6 @@ export default function ClienteDashboardPage() {
             <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Explorar Mi Red →</button>
           </section>
 
-          <section className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm sm:p-5">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-blue-700">Resumen de campaña</p><h2 className="mt-1 text-lg font-extrabold text-slate-900">Centro de control electoral</h2><p className="mt-1 text-xs text-slate-500">Cifras actuales calculadas a partir de las campañas y la multired, sin datos de demostración.</p></div>
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-800">Datos actuales</span>
-            </div>
-            {(()=>{
-              const meta=campanas.filter(c=>c.estado==="activa").reduce((sum,c)=>sum+Math.max(0,Number(c.metaVotos)||0),0);
-              const estimado=redMetricas.votosEstimados;
-              const red=redMetricas.votosRed;
-              const cumplimiento=estimado>0?(red/estimado)*100:null;
-              const cobertura=meta>0?(red/meta)*100:null;
-              const format=(n:number)=>Math.round(n).toLocaleString("es-CO");
-              return <><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {[
-                  {label:"Meta electoral activa",value:meta>0?format(meta):"Sin definir",note:"Suma de metas de campañas activas"},
-                  {label:"Estimado manual",value:format(estimado),note:"Compromisos estimados por líderes"},
-                  {label:"Aporte calculado de red",value:format(red),note:"Proyección de nodos, no votos verificados"},
-                  {label:"Avance frente al estimado",value:cumplimiento===null?"Sin estimado":cumplimiento.toFixed(1)+"%",note:"Aporte de red dividido entre estimado"},
-                ].map(card=><div key={card.label} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4"><p className="text-[11px] font-medium text-slate-500">{card.label}</p><p className="mt-1 break-words text-xl font-extrabold tracking-tight text-blue-950 sm:text-2xl">{card.value}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">{card.note}</p></div>)}
-              </div><div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                <div><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-slate-700">Progreso del aporte de red frente al estimado manual</p><p className="text-xs font-bold text-blue-800">{cumplimiento===null?"—":cumplimiento.toFixed(1)+"%"}</p></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600 transition-all" style={{width:`${Math.min(100,Math.max(0,cumplimiento||0))}%`}}/></div><p className="mt-2 text-[11px] text-slate-500">{cobertura===null?"Configura una meta electoral en una campaña activa para comparar también con esa meta.":`El aporte calculado equivale al ${cobertura.toFixed(1)}% de la meta electoral activa.`}</p></div>
-                <button onClick={()=>router.push("/mired")} className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-800 transition hover:bg-blue-100">Explorar líderes y red →</button>
-              </div></>;
-            })()}
-          </section>
-
           {(() => {
             const activas = campanas.filter(c => (c.estado || "inactiva") === "activa");
             const estimadoTotal = redMetricas.votosEstimados;
@@ -559,6 +533,11 @@ export default function ClienteDashboardPage() {
                       className="h-full rounded-full bg-emerald-500 transition-all"
                       style={{ width: `${avance}%` }}
                     />
+                  </div>
+
+                  <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Gráfica de proyección por líder</h3><p className="mt-1 text-[11px] text-slate-500">Comparación actual de los 8 líderes con mayor aporte calculado. No representa evolución histórica.</p></div><div className="flex gap-3 text-[10px] font-semibold"><span className="flex items-center gap-1 text-blue-700"><i className="h-2.5 w-2.5 rounded-sm bg-blue-600"/> Aporte de red</span><span className="flex items-center gap-1 text-amber-700"><i className="h-2.5 w-2.5 rounded-sm bg-amber-400"/> Estimado manual</span></div></div>
+                    {(()=>{const top=[...lideresResumen].sort((a,b)=>b.votos-a.votos).slice(0,8);const max=Math.max(1,...top.flatMap(l=>[l.votos,l.estimado]));return top.length?<div className="mt-4 space-y-3">{top.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr] items-center gap-3"><span title={l.nombre} className="truncate text-xs font-medium text-slate-700">{l.nombre}</span><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-9 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-9 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado}</span></div></div></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">Aún no hay líderes con datos para representar.</p>})()}
                   </div>
 
                   <div className="mt-3 grid gap-2 md:grid-cols-3">
