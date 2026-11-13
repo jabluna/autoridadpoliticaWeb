@@ -3,7 +3,6 @@ import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
-import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
 const app = () => getApps()[0] ?? initializeApp({ credential: applicationDefault(), projectId: "autoridadpolitica", storageBucket: "autoridadpolitica.firebasestorage.app" });
@@ -50,7 +49,7 @@ export async function GET(req: NextRequest) {
       if (!/^[\\w-]{1,150}$/.test(id)) return fail("Archivo inválido");
       const record = await base(c).collection(collectionName).doc(id).get();
       if (!record.exists || !record.get("storagePath")) return fail("Archivo no encontrado",404);
-      const [url] = await getStorage(app()).bucket().file(record.get("storagePath")).getSignedUrl({
+      const [url] = await getStorage(app()).bucket("autoridadpolitica.firebasestorage.app").file(record.get("storagePath")).getSignedUrl({
         action:"read",expires:Date.now()+10*60*1000
       });
       return NextResponse.json({url, nombre:record.get("nombreOriginal")||record.get("nombre")});
@@ -104,7 +103,7 @@ export async function POST(req: NextRequest) {
     const ref=base(c).collection(collectionName).doc();
     const ext=clean(file.name.split(".").pop(),12).replace(/[^a-z0-9]/gi,"")||"bin";
     const storagePath=`medios/${clienteId}/${campanaId}/${collectionName}/${ref.id}.${ext}`;
-    const bucket=getStorage(app()).bucket();
+    const bucket=getStorage(app()).bucket("autoridadpolitica.firebasestorage.app");
     await bucket.file(storagePath).save(Buffer.from(await file.arrayBuffer()),{contentType:file.type||"application/octet-stream",resumable:false,metadata:{cacheControl:"private, max-age=0"}});
     await ref.set({nombre:name,nombreOriginal:clean(file.name,250),tipo:file.type||"application/octet-stream",bytes:file.size,storagePath,albumId:type==="photo"?albumId:null,creadoPor:c.uid,creadoEn:FieldValue.serverTimestamp()});
     return NextResponse.json({id:ref.id});
@@ -135,7 +134,7 @@ export async function DELETE(req: NextRequest) {
       const photos=await base(c).collection("fotosMedios").where("albumId","==",ref.id).limit(1).get();
       if (!photos.empty) return fail("El álbum tiene fotos. Elimínalas primero.",409);
     }
-    if (snap.get("storagePath")) await getStorage(app()).bucket().file(snap.get("storagePath")).delete({ignoreNotFound:true});
+    if (snap.get("storagePath")) await getStorage(app()).bucket("autoridadpolitica.firebasestorage.app").file(snap.get("storagePath")).delete({ignoreNotFound:true});
     await ref.delete();return NextResponse.json({ok:true});
   }catch(e){return fail(e instanceof Error?e.message:"Error",403)}
 }
