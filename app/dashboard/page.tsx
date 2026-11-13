@@ -1,4 +1,5 @@
 "use client";
+import { useMediosGestionAccess } from "@/components/useMediosGestionAccess";
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -52,6 +53,7 @@ type Cliente = {
 
 export default function ClienteDashboardPage() {
   const router = useRouter();
+  const {canManage:canAccessGestion}=useMediosGestionAccess();
   const [loading, setLoading] = useState(true);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [nombre, setNombre] = useState("");
@@ -304,7 +306,7 @@ export default function ClienteDashboardPage() {
             <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
               <p className="px-3 py-2 text-xs font-extrabold uppercase tracking-wider text-blue-100">Medios</p>
               {[
-                { label: "Autorizaciones y gestión", href: "/medios/gestion" },
+                ...(canAccessGestion ? [{ label: "Autorizaciones y gestión", href: "/medios/gestion" }] : []),
                 { label: "Medios", href: "/medios" },
                 { label: "Galería", href: "/medios/galeria" },
               ].map(item => (
