@@ -22,6 +22,7 @@ type TipoCampana = "municipal" | "departamental" | "nacional";
 type Corporacion =
   | "silueta"
   | "edil"
+  | "jac"
   | "alcaldia"
   | "concejo"
   | "gobernacion"
@@ -60,6 +61,7 @@ const OPCIONES: Record<
   municipal: [
     { value: "silueta", label: "Silueta" },
     { value: "edil", label: "Edil / JAL" },
+    { value: "jac", label: "Junta de Acción Comunal (JAC)" },
     { value: "alcaldia", label: "Alcaldía" },
     { value: "concejo", label: "Concejo municipal" },
   ],
@@ -406,6 +408,13 @@ export default function ConfiguracionCampanaPage() {
     setShowForm(true);
     setStep(2);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const transformarSilueta = (c: Campana) => {
+    if (c.corporacion !== "silueta") return;
+    editarCampana(c);
+    setStep(1);
+    setMessage("");
   };
 
   const cancelarEdicion = () => {
@@ -856,8 +865,8 @@ export default function ConfiguracionCampanaPage() {
             </div>
             <div className="p-5 sm:p-6">
               {step===1 && <div className="mx-auto max-w-5xl">
-                <p className="text-xs font-bold uppercase tracking-[.14em] text-blue-600">Paso 1 de {totalSteps}</p><h3 className="mt-1 text-2xl font-bold text-slate-950">¿Qué campaña quieres configurar?</h3><p className="mt-2 text-sm text-slate-500">Elige una opción incluida en tu membresía. Las demás pueden solicitarse como ampliación.</p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["silueta","Silueta","Municipal"],["edil","Edil / JAL","Municipal"],["concejo","Concejo","Municipal"],["alcaldia","Alcaldía","Municipal"],["asamblea","Asamblea","Departamental"],["gobernacion","Gobernación","Departamental"],["presidencia","Presidencia","Nacional"]] as [Corporacion,string,string][]).map(([value,label,level])=>{const licensed=campaignLicensed(value) || (Boolean(editingId) && form.corporacion===value);const selected=form.corporacion===value;return <button type="button" key={value} onClick={()=>{if(!licensed){requestCampaignUpgrade(value);return;}const tipo:TipoCampana=value==="presidencia"?"nacional":value==="asamblea"||value==="gobernacion"?"departamental":"municipal";setForm(v=>({...v,tipo,corporacion:value,departamento:tipo==="nacional"?"":v.departamento,municipio:tipo==="municipal"?v.municipio:"",alcancePuestos:"todos"}));setPuestosSeleccionados([]);}} className={`min-h-[125px] rounded-2xl border p-4 text-left ${value==="silueta"?"shadow-md shadow-blue-100":""} ${selected&&licensed?"border-blue-500 bg-blue-50 ring-2 ring-blue-500/10":licensed?"border-slate-200 bg-white hover:border-blue-300":"border-slate-200 bg-slate-50"}`}><div className="flex items-start justify-between gap-2"><div><p className={`text-base font-bold ${licensed?"text-slate-900":"text-slate-400"}`}>{label}</p>{value==="silueta"&&<p className="mt-1 text-[10px] font-bold text-blue-700">Predeterminada</p>}<p className="mt-1 text-[11px] text-slate-400">{level}</p></div><span className={`rounded-full px-2 py-1 text-[8px] font-bold ${licensed?"bg-blue-50 text-blue-700":"bg-amber-50 text-amber-700"}`}>{licensed?"INCLUIDA":"AMPLIAR"}</span></div><p className="mt-5 text-[10px] text-slate-500">{licensed?(selected?"Seleccionada. Continúa al siguiente paso.":"Disponible en tu membresía."):"Solicita agregarla a tu plan."}</p></button>})}</div>
+                <p className="text-xs font-bold uppercase tracking-[.14em] text-blue-600">Paso 1 de {totalSteps}</p><h3 className="mt-1 text-2xl font-bold text-slate-950">¿Qué campaña quieres configurar?</h3>{editingId && campanas.find(c=>c.id===editingId)?.corporacion==="silueta" && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900">Transformación de silueta: selecciona el cargo electoral. Se conservará la misma campaña, su identificador, líderes y personas registradas. Las opciones no incluidas en tu plan requieren ampliación.</p>}<p className="mt-2 text-sm text-slate-500">Elige una opción incluida en tu membresía. Las demás pueden solicitarse como ampliación.</p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["silueta","Silueta","Municipal"],["jac","Junta de Acción Comunal (JAC)","Municipal"],["edil","Edil / JAL","Municipal"],["concejo","Concejo","Municipal"],["alcaldia","Alcaldía","Municipal"],["asamblea","Asamblea","Departamental"],["gobernacion","Gobernación","Departamental"],["presidencia","Presidencia","Nacional"]] as [Corporacion,string,string][]).map(([value,label,level])=>{const licensed=campaignLicensed(value) || (Boolean(editingId) && form.corporacion===value);const selected=form.corporacion===value;return <button type="button" key={value} onClick={()=>{if(!licensed){requestCampaignUpgrade(value);return;}const tipo:TipoCampana=value==="presidencia"?"nacional":value==="asamblea"||value==="gobernacion"?"departamental":"municipal";setForm(v=>({...v,tipo,corporacion:value,departamento:tipo==="nacional"?"":v.departamento,municipio:tipo==="municipal"?v.municipio:"",alcancePuestos:"todos"}));setPuestosSeleccionados([]);}} className={`min-h-[125px] rounded-2xl border p-4 text-left ${value==="silueta"?"shadow-md shadow-blue-100":""} ${selected&&licensed?"border-blue-500 bg-blue-50 ring-2 ring-blue-500/10":licensed?"border-slate-200 bg-white hover:border-blue-300":"border-slate-200 bg-slate-50"}`}><div className="flex items-start justify-between gap-2"><div><p className={`text-base font-bold ${licensed?"text-slate-900":"text-slate-400"}`}>{label}</p>{value==="silueta"&&<p className="mt-1 text-[10px] font-bold text-blue-700">Predeterminada</p>}<p className="mt-1 text-[11px] text-slate-400">{level}</p></div><span className={`rounded-full px-2 py-1 text-[8px] font-bold ${licensed?"bg-blue-50 text-blue-700":"bg-amber-50 text-amber-700"}`}>{licensed?"INCLUIDA":"AMPLIAR"}</span></div><p className="mt-5 text-[10px] text-slate-500">{licensed?(selected?"Seleccionada. Continúa al siguiente paso.":"Disponible en tu membresía."):"Solicita agregarla a tu plan."}</p></button>})}</div>
               </div>}
               {step===2 && <div className="mx-auto max-w-4xl"><p className="text-xs font-bold uppercase tracking-[.14em] text-blue-600">Paso 2 de {totalSteps}</p><h3 className="mt-1 text-2xl font-bold text-slate-950">Datos principales</h3><p className="mt-2 text-sm text-slate-500">Identifica la campaña. Grupo de trabajo/corporación y candidato son obligatorios.</p><div className="mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 sm:grid-cols-2"><Field label="Grupo de trabajo/corporación *" value={form.nombreCampana} onChange={(v)=>setField("nombreCampana",v)}/><Field label="Candidato / cabeza de lista *" value={form.candidato} onChange={(v)=>setField("candidato",v)}/><Field label="Partido / movimiento" value={form.partidoMovimiento} onChange={(v)=>setField("partidoMovimiento",v)}/><Field label="Lema de campaña" value={form.lema} onChange={(v)=>setField("lema",v)}/><Field label="Objetivo electoral" type="number" value={form.metaVotos} onChange={(v)=>setField("metaVotos",v)}/><Field label="Fecha de elección" type="date" value={form.fechaEleccion} onChange={(v)=>setField("fechaEleccion",v)}/></div></div>}
               {step===3 && form.tipo!=="nacional" && <div className="mx-auto max-w-4xl"><p className="text-xs font-bold uppercase tracking-[.14em] text-blue-600">Paso 3 de {totalSteps}</p><h3 className="mt-1 text-2xl font-bold text-slate-950">Territorio electoral</h3><p className="mt-2 text-sm text-slate-500">Selecciona dónde funcionará esta campaña.</p><div className={`mt-6 grid gap-4 rounded-2xl border border-slate-200 p-5 ${form.tipo==="municipal"?"sm:grid-cols-2":""}`}><div><Label>Departamento *</Label><select value={form.departamento} onChange={(e)=>{setField("departamento",e.target.value);setField("municipio","");setPuestosSeleccionados([]);}} className="input"><option value="">Seleccionar departamento</option>{departamentos.map(d=><option key={d} value={d}>{d}</option>)}</select></div>{form.tipo==="municipal"&&<div><Label>Municipio *</Label><select value={form.municipio} disabled={!form.departamento} onChange={(e)=>{setField("municipio",e.target.value);setPuestosSeleccionados([]);}} className="input disabled:bg-slate-50"><option value="">Seleccionar municipio</option>{municipios.map(m=><option key={m} value={m}>{m}</option>)}</select></div>}</div></div>}
@@ -970,6 +979,7 @@ export default function ConfiguracionCampanaPage() {
                     />
                   </div>
 
+                  {c.corporacion === "silueta" && <button type="button" onClick={() => transformarSilueta(c)} className="mt-4 w-full rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800 hover:bg-emerald-100">Transformar a campaña electoral →</button>}
                   <div className="mt-4 grid grid-cols-3 gap-2">
                     <button
                       onClick={() => editarCampana(c)}
