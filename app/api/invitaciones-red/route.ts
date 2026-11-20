@@ -80,6 +80,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category, telefono: phone }, { status: 201 });
   } catch (error) { console.error("Invitaciones POST", error); return fail("No fue posible crear la invitación.", 503); }
 }
+// La copia se almacena bajo el ID de la invitación; no se consulta la red viva tras el retiro.
+async function congelarRed(db: ReturnType<typeof getFirestore>, id: string, clienteId: string, categoria: string) {
+  const archive = db.doc(`historicosRedesVinculadas/${id}`);
+  const existing = await archive.get();
+  if (existing.exists && existing.get("estado") === "listo") return;
+  const campaigns = await db.collection(`clientes/${clienteId}/campanas`).get();
+  const matching = campaigns.docs.filter(d => categoryOf(d.get("corporacion") || d.get("cargoAspirado") || d.get("cargo") || d.get("tipoCampana")) === categoria);
+  const source = matching.length === 1 ? matching[0] : campaigns.docs.length === 1 ? campaigns.docs[0] : null;
+  if (!source) throw new Error("No se pudo identificar una única campaña de origen para congelar el histórico.");
+  const base = `clientes/${clienteId}/campanas/${source.id}`;
+  const nodes = await db.collection(`${base}/nodos`).get();
+  const rootPeople = await db.collection(`${base}/personasRaiz`).get();
+  const meetings = await db.collection(`${base}/reuniones`).get();
+  const records: Array<{ tipo: string; id: string; responsableId?: string; datos: Record<string, unknown> }> = [];
+  const clean = (value: unknown): unknown => {
+    if (value && typeof value === "object" && "toDate" in value && typeof (value as {toDate?: unknown}).toDate === "function") return (value as {toDate: () => Date}).toDate().toISOString();
+    if (Array.isArray(value)) return value.map(clean);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,clean(v)]));
+    return value ?? null;
+  };
+  const add = (tipo: string, id: string, datos: Record<string, unknown>, responsableId?: string) => records.push({tipo,id,...(responsableId ? {responsableId} : {}),datos:clean(datos) as Record<string,unknown>});
+  for (const n of nodes.docs) {
+    add("lider",n.id,n.data());
+    const people = await db.collection(`${base}/nodos/${n.id}/personas`).get();
+    for (const p of people.docs) add("persona",p.id,p.data(),n.id);
+  }
+  for (const p of rootPeople.docs) add("persona",p.id,p.data());
+  for (const m of meetings.docs) add("reunion",m.id,m.data());
+  // Fragmentos pequeños para respetar el límite de 1 MiB por documento.
+  const chunks: typeof records[] = [];
+  let current: typeof records = []; let size = 0;
+  for (const record of records) {
+    const bytes = Buffer.byteLength(JSON.stringify(record),"utf8");
+    if (bytes > 450000) throw new Error("Un registro excede el tamaño permitido para el histórico.");
+    if (size + bytes > 450000 && current.length) { chunks.push(current); current=[]; size=0; }
+    current.push(record); size+=bytes;
+  }
+  if (current.length) chunks.push(current);
+  await archive.set({estado:"preparando",campanaOrigenId:source.id,clientePropietarioId:clienteId,cantidadRegistros:records.length,cantidadFragmentos:chunks.length,actualizadoEn:FieldValue.serverTimestamp()});
+  for (let i=0;i<chunks.length;i++) await archive.collection("fragmentos").doc(String(i).padStart(7,"0")).set({registros:chunks[i]});
+  await archive.update({estado:"listo",congeladoEn:FieldValue.serverTimestamp()});
+}
 export async function PATCH(request: NextRequest) {
   try {
     const ctx = await context(request);
@@ -88,6 +130,14 @@ export async function PATCH(request: NextRequest) {
     const id = body?.id, decision = body?.decision;
     if (typeof id !== "string" || !/^[a-f0-9]{48}$/.test(id) || !["aceptar", "rechazar", "retirar"].includes(String(decision))) return fail("Solicitud inválida.", 400);
     const invitation = ctx.db.doc(`invitacionesRed/${id}`);
+    if (decision === "retirar") {
+      const pre = await invitation.get();
+      if (!pre.exists || pre.get("destinatarioUid") !== ctx.uid || pre.get("estado") !== "aceptada" || ctx.user.get("rol") !== "cliente_admin") return fail("No hay una vinculación activa que puedas retirar.", 409);
+      const link = await ctx.db.doc(`vinculacionesCampana/${id}`).get();
+      if (!link.exists || link.get("estado") !== "activa" || link.get("propietarioUid") !== ctx.uid || link.get("clientePropietarioId") !== ctx.user.get("clienteId")) return fail("La vinculación no es consistente.",409);
+      try { await congelarRed(ctx.db,id,String(ctx.user.get("clienteId")),String(pre.get("categoria")||"")); }
+      catch(e) { return fail(e instanceof Error ? e.message : "No fue posible conservar el histórico; el retiro no se realizó.", 409); }
+    }
     const result = await ctx.db.runTransaction(async tx => {
       const snap = await tx.get(invitation);
       if (!snap.exists || snap.get("destinatarioUid") !== ctx.uid) return { status: 404, error: "Invitación no encontrada." };
@@ -105,6 +155,8 @@ export async function PATCH(request: NextRequest) {
             link.get("campanaReceptoraId") !== snap.get("campanaId")) {
           return { status: 409, error: "No se encontró una vinculación activa y consistente." };
         }
+        const archive = await tx.get(ctx.db.doc(`historicosRedesVinculadas/${id}`));
+        if (!archive.exists || archive.get("estado") !== "listo") return { status: 409, error: "No se completó el histórico. No se puede retirar la red." };
         const historicName = String((ownerHistory.exists ? ownerHistory.get("nombreCliente") : "") || ctx.user.get("nombre") || "Red desvinculada");
         // Revocar el acceso y liberar la categoría en una sola transacción.
         tx.update(ownerRef, { estado: "retirada", accesoCompartido: false, retiradaEn: FieldValue.serverTimestamp() });
