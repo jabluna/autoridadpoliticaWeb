@@ -63,7 +63,7 @@ export default function ClienteDashboardPage() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [campanas, setCampanas] = useState<any[]>([]);
-  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }>>([]);
+  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
   const [liderSeleccionado, setLiderSeleccionado] = useState("");
   const [busquedaLider, setBusquedaLider] = useState("");
   const [busquedaProyeccion, setBusquedaProyeccion] = useState("");
@@ -156,7 +156,7 @@ export default function ClienteDashboardPage() {
         let votosRed = 0;
         let matrizDirectos = 0;
         let matrizProfundidad = 0;
-        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }> = [];
+        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -201,6 +201,8 @@ export default function ClienteDashboardPage() {
                 fotoUrl: String(data.fotoUrl || ""),
                 votos: calculateVotes(node.id),
                 estimado: Number(data.estimacionVotos || 0),
+                matrizDirectos: (directChildren.get(node.id) || []).length,
+                matrizProfundidad: Math.max(0, depthOf(node.id) - 1),
               });
             }
             lideres += activeNodes.length;
@@ -580,7 +582,7 @@ export default function ClienteDashboardPage() {
                        const visibles=filtrados.slice((actual-1)*tamanoPaginaProyeccion,actual*tamanoPaginaProyeccion);
                        const max=Math.max(1,...filtrados.flatMap(l=>[l.votos,l.estimado]));
                        return <>
-                         {visibles.length?<div className="mt-4 space-y-3">{visibles.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr] items-center gap-3"><span title={l.nombre} className="truncate text-xs font-medium text-slate-700">{l.nombre}</span><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos.toLocaleString("es-CO")}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado.toLocaleString("es-CO")}</span></div></div></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">{term?"No hay líderes que coincidan con la búsqueda.":"Aún no hay líderes con datos para representar."}</p>}
+                         {visibles.length?<div className="mt-4 space-y-3">{visibles.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr] items-center gap-3"><div className="min-w-0" title={`${l.nombre} · Matriz ${l.matrizDirectos}x${l.matrizProfundidad}`}><span className="block truncate text-xs font-medium text-slate-700">{l.nombre}</span><span className="mt-0.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800">Matriz {l.matrizDirectos}x{l.matrizProfundidad}</span></div><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos.toLocaleString("es-CO")}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado.toLocaleString("es-CO")}</span></div></div></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">{term?"No hay líderes que coincidan con la búsqueda.":"Aún no hay líderes con datos para representar."}</p>}
                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3"><span className="text-xs text-slate-600">Mostrando {filtrados.length?(actual-1)*tamanoPaginaProyeccion+1:0}–{Math.min(actual*tamanoPaginaProyeccion,filtrados.length)} de {filtrados.length} líderes</span><div className="flex items-center gap-2"><button type="button" disabled={actual===1} onClick={()=>setPaginaProyeccion(actual-1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Anterior</button><span className="text-xs font-semibold text-slate-700">Página {actual} de {paginas}</span><button type="button" disabled={actual>=paginas} onClick={()=>setPaginaProyeccion(actual+1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Siguiente</button></div></div>
                        </>;
                      })()}
