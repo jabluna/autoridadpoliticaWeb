@@ -35,6 +35,7 @@ type Plan = {
   tipo: "base" | "personalizado";
   preciosCampana?: PrecioCampana[];
   nivelesMaximos?: number | null;
+   maxLideresPorPadre?: number | null;
 };
 
 const TIPOS_BASE: PrecioCampana[] = [
@@ -121,6 +122,7 @@ export default function PlanesPage() {
             ...p,
             preciosCampana: TIPOS_BASE,
             nivelesMaximos: p.meses === 0 ? 3 : null,
+             maxLideresPorPadre: p.meses === 0 ? 5 : null,
             creadoEn: serverTimestamp(),
           });
         }
@@ -257,6 +259,7 @@ export default function PlanesPage() {
         descripcion: form.descripcion.trim(),
         descuento,
         nivelesMaximos: meses === 0 ? 3 : null,
+         maxLideresPorPadre: meses === 0 ? 5 : null,
         preciosCampana: precios.map((p) => ({
           ...p,
           valor: Number(p.valor || 0),
@@ -413,7 +416,7 @@ export default function PlanesPage() {
                   </div>
 
                   <div className={`mt-2 inline-flex w-fit rounded-lg px-2 py-1 text-[11px] font-medium ${p.meses === 0 ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
-                    {p.meses === 0 ? "Red limitada a 3 niveles" : "Red sin límite de niveles"}
+                    {p.meses === 0 ? "Red 5 × 3 · Máximo 5 líderes por responsable" : "Red sin límite de niveles"}
                   </div>
                   <div className="mt-3 border-t border-slate-100 pt-3 text-slate-900">
                     <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-blue-500">
@@ -485,7 +488,7 @@ export default function PlanesPage() {
                 {editing ? `Editar ${editing.nombre}` : "Crear nuevo plan"}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                El plan Free incluye 3 niveles de red; los planes de pago no tienen límite de niveles. Cada tipo de campaña tiene su propio valor.
+                El plan Free incluye 3 niveles y máximo 5 líderes directos por responsable (5 × 3); los planes de pago no tienen límite horizontal. Cada tipo de campaña tiene su propio valor.
               </p>
             </div>
 
