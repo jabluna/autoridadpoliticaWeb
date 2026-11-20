@@ -36,6 +36,25 @@ export async function GET(request: NextRequest) {
   try {
     const ctx = await context(request);
     if (!ctx) return fail("Inicia sesión con un correo verificado.", 401);
+    const term = String(request.nextUrl.searchParams.get("buscar") || "").trim();
+    if (term) {
+      if (ctx.user.get("rol") !== "cliente_admin") return fail("Solo el propietario puede buscar cuentas para invitar.",403);
+      if (term.length < 3 || term.length > 100) return fail("Escribe entre 3 y 100 caracteres.",400);
+      const normalized = normalize(term);
+      const digits = term.replace(/\D/g,"");
+      const candidates = new Map<string,FirebaseFirestore.QueryDocumentSnapshot>();
+      const add = (snap: FirebaseFirestore.QuerySnapshot) => snap.docs.forEach(d => candidates.set(d.id,d));
+      const searches: Promise<FirebaseFirestore.QuerySnapshot>[] = [];
+      if (term.includes("@")) searches.push(ctx.db.collection("clientes").where("email","==",term.toLowerCase()).limit(10).get());
+      if (digits.length >= 7) for (const phone of new Set([digits,digits.startsWith("57")?digits.slice(2):`57${digits}`,`+${digits.startsWith("57")?digits:`57${digits}`}`])) searches.push(ctx.db.collection("clientes").where("telefono","==",phone).limit(10).get());
+      // Búsqueda por nombre visible. No se exponen datos de redes ni cuentas de acceso.
+      searches.push(ctx.db.collection("clientes").orderBy("nombreCliente").startAt(term).endAt(term+"\uf8ff").limit(20).get());
+      for (const result of await Promise.all(searches)) add(result);
+      const filtered = [...candidates.values()].filter(d => d.get("estado") !== "inactivo" && d.get("planActivo") !== false && d.id !== ctx.user.get("clienteId") && d.get("authUid"));
+      const users = await Promise.all(filtered.slice(0,20).map(async d => ({d,u:await ctx.db.doc(`usuarios/${d.get("authUid")}`).get()})));
+      const resultados = users.filter(({d,u}) => u.exists && u.get("rol") === "cliente_admin" && u.get("estado") !== "inactivo" && u.get("clienteId") === d.id).map(({d,u}) => ({id:d.id,nombre:String(d.get("nombreCliente") || [u.get("nombre"),u.get("apellido")].filter(Boolean).join(" ") || "Cliente"),telefono:String(d.get("telefono")||""),correo:String(d.get("email")||"")}));
+      return NextResponse.json({resultados},{headers:{"Cache-Control":"no-store"}});
+    }
     const snap = await ctx.db.collection("invitacionesRed").where("destinatarioUid", "==", ctx.uid).limit(100).get();
     const now = Date.now();
     return NextResponse.json({ invitaciones: snap.docs.map(d => {
@@ -51,12 +70,18 @@ export async function POST(request: NextRequest) {
     if (ctx.user.get("rol") !== "cliente_admin") return fail("Solo el administrador de campaña puede invitar en esta etapa.", 403);
     const clienteId = String(ctx.user.get("clienteId") || "");
     const body = await request.json() as Record<string, unknown>;
-    const campanaId = body?.campanaId, phone = String(body?.telefono || "").replace(/[^0-9]/g, "");
-    if (typeof campanaId !== "string" || !/^[a-zA-Z0-9_-]{1,150}$/.test(campanaId) || phone.length < 10 || phone.length > 15) return fail("Campaña o número de WhatsApp inválido.", 400);
+    const campanaId = body?.campanaId, phone = String(body?.telefono || "").replace(/[^0-9]/g, ""), destinatarioClienteId = String(body?.destinatarioClienteId || "");
+    if (typeof campanaId !== "string" || !/^[a-zA-Z0-9_-]{1,150}$/.test(campanaId) || (!destinatarioClienteId && (phone.length < 10 || phone.length > 15))) return fail("Campaña o número de WhatsApp inválido.", 400);
     const localPhone = phone.startsWith("57") && phone.length === 12 ? phone.slice(2) : phone;
     const candidates = [...new Set([phone, localPhone, `57${localPhone}`, `+57${localPhone}`])];
     const found = await Promise.all(candidates.map(telefono => ctx.db.collection("clientes").where("telefono", "==", telefono).limit(3).get()));
     const matched = new Map(found.flatMap(s => s.docs).map(d => [d.id, d]));
+    if (destinatarioClienteId) {
+      if (!/^[a-zA-Z0-9_-]{1,150}$/.test(destinatarioClienteId)) return fail("Destinatario inválido.",400);
+      const selected = await ctx.db.doc(`clientes/${destinatarioClienteId}`).get();
+      matched.clear();
+      if (selected.exists) matched.set(selected.id,selected as FirebaseFirestore.QueryDocumentSnapshot);
+    }
     if (matched.size !== 1) return fail("No se encontró un único cliente registrado con ese número de WhatsApp.", 404);
     const recipient = [...matched.values()][0];
     if (recipient.get("estado") === "inactivo" || recipient.get("planActivo") === false) return fail("El destinatario no tiene un cliente activo.", 403);
@@ -73,11 +98,11 @@ export async function POST(request: NextRequest) {
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await ctx.db.doc(`invitacionesRed/${id}`).create({
       emisorUid: ctx.uid, emisorNombre: String(ctx.user.get("nombre") || client.get("nombreCliente") || "Administrador"),
-      destinatarioEmail: email, destinatarioUid: recipientUid, destinatarioTelefono: phone, clienteId, campanaId, campanaNombre: String(campaign.get("nombreCampana") || client.get("nombreCampana") || "Campaña"),
+      destinatarioEmail: email, destinatarioUid: recipientUid, destinatarioTelefono: String(recipient.get("telefono") || phone), clienteId, campanaId, campanaNombre: String(campaign.get("nombreCampana") || client.get("nombreCampana") || "Campaña"),
       categoria: category, estado: "pendiente", accesoCompartido: false,
       creadoEn: FieldValue.serverTimestamp(), expiraEn: expires,
     });
-    return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category, telefono: phone }, { status: 201 });
+    return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category, telefono: String(recipient.get("telefono") || phone) }, { status: 201 });
   } catch (error) { console.error("Invitaciones POST", error); return fail("No fue posible crear la invitación.", 503); }
 }
 // La copia se almacena bajo el ID de la invitación; no se consulta la red viva tras el retiro.
