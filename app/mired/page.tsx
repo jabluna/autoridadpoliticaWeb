@@ -29,6 +29,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   const [clienteId, setClienteId] = useState("");
   const [gerente, setGerente] = useState("");
   const [niveles, setNiveles] = useState(1);
+  const [freePlan, setFreePlan] = useState(false);
   const [campanas, setCampanas] = useState<Campana[]>([]);
   const [campanaId, setCampanaId] = useState("");
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
@@ -312,7 +313,8 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
         if (!live) return;
         setClienteId(u.clienteId);
         setGerente(String(c.responsable || c.nombreCliente || user.email || "Gerente"));
-        setNiveles(Number(c.plan?.meses ?? 0) > 0 ? Infinity : Math.max(1, Number(c.nivelesRed) || 3));
+        setFreePlan(Number(c.plan?.meses ?? 0) === 0);
+         setNiveles(Number(c.plan?.meses ?? 0) > 0 ? Infinity : 3);
         const rows = leaderMode ? [{id:u.campanaId,nombreCampana:"Mi campaña",estado:"activa"} as Campana] : campaigns!.docs.map(d => ({ id: d.id, ...d.data() } as Campana));
         if (leaderMode) {setLeaderRoot(u.nodoId);setFocusId(u.nodoId);setParentName(parentNode?.exists()?`${parentNode.data()?.nombre||""} ${parentNode.data()?.apellido||""}`.trim():String(c.responsable||c.nombreCliente||"Gerencia"));}
         setCampanas(rows);
@@ -582,7 +584,12 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       } else {
         const level = parentId ? (focusNode?.id === parentId ? focusNode.nivel : (await getDoc(doc(nodesRef(), parentId))).data()?.nivel || 1) + 1 : 2;
         if (level > niveles) throw new Error(`El plan permite ${niveles} niveles. Solicita una ampliación desde Mi Red para registrar más líderes.`);
-        if (parentId) { const parent = await getDoc(doc(nodesRef(), parentId)); if (!parent.exists() || parent.data().multinodo === false) throw new Error("Este líder no tiene habilitado multinodo para registrar líderes descendientes."); }
+        if (freePlan) {
+           const siblings = await getDocs(query(nodesRef(), where("padreId", "==", parentId)));
+           const activeSiblings = siblings.docs.filter(d => d.data().estado !== "inactivo");
+           if (activeSiblings.length >= 5) throw new Error(`El plan Free permite máximo 5 líderes directos por responsable en los niveles 2 y 3. Este responsable ya tiene ${activeSiblings.length}.`);
+         }
+         if (parentId) { const parent = await getDoc(doc(nodesRef(), parentId)); if (!parent.exists() || parent.data().multinodo === false) throw new Error("Este líder no tiene habilitado multinodo para registrar líderes descendientes."); }
         const secondary = initializeApp(getApp().options, `mired-${Date.now()}-${Math.random().toString(36).slice(2)}`);
         const secondaryAuth = getAuth(secondary);
         let uid = "";
@@ -661,6 +668,11 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       const level = target ? Number(target.data()?.nivel || 1) + 1 : 2;
       const shift = level - node.nivel;
       if ([node, ...descendants].some(n => n.nivel + shift > niveles || n.nivel + shift < 2)) throw new Error("El traslado excede los niveles permitidos.");
+       if (freePlan) {
+         const siblings = await getDocs(query(nodesRef(), where("padreId", "==", targetId)));
+         const activeSiblings = siblings.docs.filter(d => d.id !== node.id && d.data().estado !== "inactivo");
+         if (activeSiblings.length >= 5) throw new Error("El plan Free permite máximo 5 líderes directos por responsable. El destino ya alcanzó su cupo.");
+       }
       if (!window.confirm(`¿Trasladar a ${fullName(node)} y ${descendants.length} descendientes bajo ${target ? fullName(target.data() as Nodo) : gerente}?`)) return;
       const batch = writeBatch(db);
       batch.update(doc(nodesRef(), node.id), { padreId: targetId, nivel: level, actualizadoEn: serverTimestamp() });
