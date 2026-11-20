@@ -66,6 +66,9 @@ export default function ClienteDashboardPage() {
   const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }>>([]);
   const [liderSeleccionado, setLiderSeleccionado] = useState("");
   const [busquedaLider, setBusquedaLider] = useState("");
+  const [busquedaProyeccion, setBusquedaProyeccion] = useState("");
+  const [paginaProyeccion, setPaginaProyeccion] = useState(1);
+  const [tamanoPaginaProyeccion, setTamanoPaginaProyeccion] = useState(10);
   const [redMetricas, setRedMetricas] = useState({
     integrantes: 0,
     lideres: 0,
@@ -738,4 +741,26 @@ function Icon({ name }: { name: string }) {
   if (name === "logout") return <svg {...common}><path d="M10 5H5V19H10M14 8L18 12L14 16M8 12H18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>;
   if (name === "bell") return <svg {...common}><path d="M18 8A6 6 0 0 0 6 8C6 15 3.5 16 3.5 16H20.5S18 15 18 8Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><path d="M10 20H14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>;
   return null;
-}
+}                   <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+                     <div className="flex flex-wrap items-center justify-between gap-3">
+                       <div><h3 className="text-sm font-bold text-slate-900">Gráfica de proyección por líder</h3><p className="mt-1 text-[11px] text-slate-500">Consulta todos los líderes por aporte calculado, con búsqueda y paginación.</p></div>
+                       <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold"><span className="flex items-center gap-1 text-blue-700"><i className="h-2.5 w-2.5 rounded-sm bg-blue-600"/> Aporte de red</span><span className="flex items-center gap-1 text-amber-700"><i className="h-2.5 w-2.5 rounded-sm bg-amber-400"/> Estimado manual</span></div>
+                     </div>
+                     <div className="mt-4 flex flex-wrap items-center gap-2">
+                       <input type="search" aria-label="Buscar líder en gráfica de proyección" placeholder="Buscar por nombre o ciudad..." value={busquedaProyeccion} onChange={e=>{setBusquedaProyeccion(e.target.value);setPaginaProyeccion(1);}} className="h-10 w-full max-w-sm rounded-xl border border-blue-200 bg-white px-3 text-xs outline-none focus:border-blue-500" />
+                       <label className="flex items-center gap-2 text-xs text-slate-600">Mostrar <select aria-label="Líderes por página" value={tamanoPaginaProyeccion} onChange={e=>{setTamanoPaginaProyeccion(Number(e.target.value));setPaginaProyeccion(1);}} className="h-10 rounded-lg border border-blue-200 bg-white px-2"><option value={10}>10</option><option value={50}>50</option><option value={100}>100</option></select></label>
+                     </div>
+                     {(()=>{
+                       const term=busquedaProyeccion.trim().toLocaleLowerCase("es");
+                       const filtrados=[...lideresResumen].filter(l=>!term||`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term)).sort((a,b)=>b.votos-a.votos);
+                       const paginas=Math.max(1,Math.ceil(filtrados.length/tamanoPaginaProyeccion));
+                       const actual=Math.min(paginaProyeccion,paginas);
+                       const visibles=filtrados.slice((actual-1)*tamanoPaginaProyeccion,actual*tamanoPaginaProyeccion);
+                       const max=Math.max(1,...filtrados.flatMap(l=>[l.votos,l.estimado]));
+                       return <>
+                         {visibles.length?<div className="mt-4 space-y-3">{visibles.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr] items-center gap-3"><span title={l.nombre} className="truncate text-xs font-medium text-slate-700">{l.nombre}</span><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos.toLocaleString("es-CO")}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado.toLocaleString("es-CO")}</span></div></div></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">{term?"No hay líderes que coincidan con la búsqueda.":"Aún no hay líderes con datos para representar."}</p>}
+                         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3"><span className="text-xs text-slate-600">Mostrando {filtrados.length?(actual-1)*tamanoPaginaProyeccion+1:0}–{Math.min(actual*tamanoPaginaProyeccion,filtrados.length)} de {filtrados.length} líderes</span><div className="flex items-center gap-2"><button type="button" disabled={actual===1} onClick={()=>setPaginaProyeccion(actual-1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Anterior</button><span className="text-xs font-semibold text-slate-700">Página {actual} de {paginas}</span><button type="button" disabled={actual>=paginas} onClick={()=>setPaginaProyeccion(actual+1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Siguiente</button></div></div>
+                       </>;
+                     })()}
+                   </div>
+
