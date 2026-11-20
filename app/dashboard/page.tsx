@@ -74,6 +74,8 @@ export default function ClienteDashboardPage() {
     lideres: 0,
     votosEstimados: 0,
     votosRed: 0,
+    matrizDirectos: 0,
+    matrizProfundidad: 0,
   });
 
   useEffect(() => {
@@ -152,6 +154,8 @@ export default function ClienteDashboardPage() {
         let lideres = 0;
         let votosEstimados = 0;
         let votosRed = 0;
+        let matrizDirectos = 0;
+        let matrizProfundidad = 0;
         const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }> = [];
         for (const camp of campRows) {
           try {
@@ -164,6 +168,18 @@ export default function ClienteDashboardPage() {
               const parent = String(node.data().padreId || "");
               directChildren.set(parent, [...(directChildren.get(parent) || []), node.id]);
             }
+            // Matriz del nivel uno: cantidad de líderes directos × profundidad.
+            matrizDirectos += (directChildren.get("") || []).length;
+            const depthCache = new Map<string, number>();
+            const depthOf = (id: string, seen = new Set<string>()): number => {
+              if (depthCache.has(id)) return depthCache.get(id)!;
+              if (seen.has(id)) return 0;
+              const next = new Set(seen); next.add(id);
+              const depth = 1 + Math.max(0, ...(directChildren.get(id) || []).map(child => depthOf(child, next)));
+              depthCache.set(id, depth);
+              return depth;
+            };
+            matrizProfundidad = Math.max(matrizProfundidad, 0, ...(directChildren.get("") || []).map(id => depthOf(id)));
             const voteCache = new Map<string, number>();
             const calculateVotes = (id: string, seen = new Set<string>()): number => {
               if (voteCache.has(id)) return voteCache.get(id)!;
@@ -207,7 +223,7 @@ export default function ClienteDashboardPage() {
           }
         }
 
-        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed });
+        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed, matrizDirectos, matrizProfundidad });
         setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
         setLiderSeleccionado(current => current && perfiles.some(p => p.id === current) ? current : (perfiles[0]?.id || ""));
         setLoading(false);
@@ -513,11 +529,12 @@ export default function ClienteDashboardPage() {
                 <section className="mt-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Resumen de multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, integrantes y votos.</p></div><button onClick={() => router.push("/mired")} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver mi grupo de trabajo →</button></div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <div className="rounded-xl bg-blue-50 p-3"><strong className="block text-xl font-black text-blue-800">{redMetricas.lideres.toLocaleString("es-CO")}</strong><span className="text-[11px] text-blue-700">Líderes</span></div>
                 <div className="rounded-xl bg-cyan-50 p-3"><strong className="block text-xl font-black text-cyan-800">{redMetricas.integrantes.toLocaleString("es-CO")}</strong><span className="text-[11px] text-cyan-700">Integrantes</span></div>
                 <div className="rounded-xl bg-emerald-50 p-3"><strong className="block text-xl font-black text-emerald-800">{redMetricas.votosRed.toLocaleString("es-CO")}</strong><span className="text-[11px] text-emerald-700">Consolidado equipo</span></div>
                 <div className="rounded-xl bg-amber-50 p-3"><strong className="block text-xl font-black text-amber-800">{redMetricas.votosEstimados.toLocaleString("es-CO")}</strong><span className="text-[11px] text-amber-700">Estimado manual</span></div>
+                <div className="rounded-xl bg-violet-50 p-3"><strong className="block text-xl font-black text-violet-800">{redMetricas.matrizDirectos}x{redMetricas.matrizProfundidad}</strong><span className="text-[11px] text-violet-700">Matriz</span></div>
               </div>
               {(() => {const gap=redMetricas.votosEstimados-redMetricas.votosRed;const pct=redMetricas.votosEstimados>0?redMetricas.votosRed/redMetricas.votosEstimados*100:0;return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">Cumplimiento de la multired</span><strong className="text-blue-700">{pct.toFixed(1)}%</strong></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{width:`${Math.max(0,Math.min(100,pct))}%`}} /></div><p className="mt-2 text-[11px] text-slate-500">Diferencia entre estimado y votos: <strong className="text-slate-800">{gap.toLocaleString("es-CO")}</strong></p></div>})()}
             </div>
