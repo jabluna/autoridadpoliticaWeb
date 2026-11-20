@@ -68,7 +68,7 @@ export default function ClienteDashboardPage() {
   const [busquedaLider, setBusquedaLider] = useState("");
   const [busquedaProyeccion, setBusquedaProyeccion] = useState("");
   const [paginaProyeccion, setPaginaProyeccion] = useState(1);
-  const [tamanoPaginaProyeccion, setTamanoPaginaProyeccion] = useState(10);
+  const [tamanoPaginaProyeccion, setTamanoPaginaProyeccion] = useState(5);
   const [redMetricas, setRedMetricas] = useState({
     integrantes: 0,
     lideres: 0,
@@ -553,7 +553,7 @@ export default function ClienteDashboardPage() {
                      </div>
                      <div className="mt-4 flex flex-wrap items-center gap-2">
                        <input type="search" aria-label="Buscar líder en gráfica de proyección" placeholder="Buscar por nombre o ciudad..." value={busquedaProyeccion} onChange={e=>{setBusquedaProyeccion(e.target.value);setPaginaProyeccion(1);}} className="h-10 w-full max-w-sm rounded-xl border border-blue-200 bg-white px-3 text-xs outline-none focus:border-blue-500" />
-                       <label className="flex items-center gap-2 text-xs text-slate-600">Mostrar <select aria-label="Líderes por página" value={tamanoPaginaProyeccion} onChange={e=>{setTamanoPaginaProyeccion(Number(e.target.value));setPaginaProyeccion(1);}} className="h-10 rounded-lg border border-blue-200 bg-white px-2"><option value={10}>10</option><option value={50}>50</option><option value={100}>100</option></select></label>
+                       <label className="flex items-center gap-2 text-xs text-slate-600">Mostrar <select aria-label="Líderes por página" value={tamanoPaginaProyeccion} onChange={e=>{setTamanoPaginaProyeccion(Number(e.target.value));setPaginaProyeccion(1);}} className="h-10 rounded-lg border border-blue-200 bg-white px-2"><option value={5}>5</option><option value={10}>10</option><option value={50}>50</option><option value={100}>100</option></select></label>
                      </div>
                      {(()=>{
                        const term=busquedaProyeccion.trim().toLocaleLowerCase("es");
