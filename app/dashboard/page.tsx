@@ -569,34 +569,6 @@ export default function ClienteDashboardPage() {
                      })()}
                    </div>
 
-                   <div className="mt-3 grid gap-2 md:grid-cols-3">
-                    {activas.length === 0 ? (
-                      <div className="md:col-span-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                        No hay campañas activas. Activa una campaña para consultar su proyección.
-                      </div>
-                    ) : (
-                      activas.map(c => (
-                        <div key={c.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-semibold text-slate-800">{c.nombreCampana}</p>
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">ACTIVA</span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-400">{c.candidato || "Campaña"}</p>
-                          <div className="mt-4 flex items-end justify-between gap-3">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-slate-400">Meta</p>
-                              <p className="mt-1 text-lg font-semibold text-slate-900">
-                                {Number(c.metaVotos || 0).toLocaleString("es-CO")}
-                              </p>
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              {c.tipo === "nacional" ? "Nacional" : c.municipio || c.departamento || "Territorio"}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
                 </section></div>
                   <div className="min-w-0 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Ficha de líder</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><div className="relative w-full sm:w-[235px]"><input type="search" aria-label="Buscar líder por nombre o ciudad" placeholder="Buscar líder o ciudad..." value={busquedaLider} onChange={e=>setBusquedaLider(e.target.value)} className="w-full rounded-xl border border-sky-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />{busquedaLider.trim() && <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">{(() => {const term=busquedaLider.trim().toLocaleLowerCase("es");const matches=lideresResumen.filter(l=>`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term));return matches.length ? <>{matches.slice(0,8).map(l=><button key={l.id} type="button" onClick={()=>{setLiderSeleccionado(l.id);setBusquedaLider("");}} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"><span className="block truncate text-xs font-semibold text-slate-800">{l.nombre}</span><span className="block truncate text-[10px] text-slate-500">{l.ciudad}</span></button>)}{matches.length>8&&<p className="px-3 py-2 text-[10px] text-slate-500">Mostrando 8 de {matches.length}. Escribe más para precisar.</p>}</> : <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</p>;})()}</div>}</div></div>
