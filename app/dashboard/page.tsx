@@ -1,4 +1,5 @@
 "use client";
+import { useMediosGestionAccess } from "@/components/useMediosGestionAccess";
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -52,6 +53,7 @@ type Cliente = {
 
 export default function ClienteDashboardPage() {
   const router = useRouter();
+  const {canManage:canAccessGestion}=useMediosGestionAccess();
   const [loading, setLoading] = useState(true);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [nombre, setNombre] = useState("");
@@ -61,14 +63,19 @@ export default function ClienteDashboardPage() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [campanas, setCampanas] = useState<any[]>([]);
-  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }>>([]);
+  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
   const [liderSeleccionado, setLiderSeleccionado] = useState("");
   const [busquedaLider, setBusquedaLider] = useState("");
+  const [busquedaProyeccion, setBusquedaProyeccion] = useState("");
+  const [paginaProyeccion, setPaginaProyeccion] = useState(1);
+  const [tamanoPaginaProyeccion, setTamanoPaginaProyeccion] = useState(5);
   const [redMetricas, setRedMetricas] = useState({
     integrantes: 0,
     lideres: 0,
     votosEstimados: 0,
     votosRed: 0,
+    matrizDirectos: 0,
+    matrizProfundidad: 0,
   });
 
   useEffect(() => {
@@ -147,7 +154,9 @@ export default function ClienteDashboardPage() {
         let lideres = 0;
         let votosEstimados = 0;
         let votosRed = 0;
-        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }> = [];
+        let matrizDirectos = 0;
+        let matrizProfundidad = 0;
+        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -159,6 +168,18 @@ export default function ClienteDashboardPage() {
               const parent = String(node.data().padreId || "");
               directChildren.set(parent, [...(directChildren.get(parent) || []), node.id]);
             }
+            // Matriz del nivel uno: cantidad de líderes directos × profundidad.
+            matrizDirectos += (directChildren.get("") || []).length;
+            const depthCache = new Map<string, number>();
+            const depthOf = (id: string, seen = new Set<string>()): number => {
+              if (depthCache.has(id)) return depthCache.get(id)!;
+              if (seen.has(id)) return 0;
+              const next = new Set(seen); next.add(id);
+              const depth = 1 + Math.max(0, ...(directChildren.get(id) || []).map(child => depthOf(child, next)));
+              depthCache.set(id, depth);
+              return depth;
+            };
+            matrizProfundidad = Math.max(matrizProfundidad, 0, ...(directChildren.get("") || []).map(id => depthOf(id)));
             const voteCache = new Map<string, number>();
             const calculateVotes = (id: string, seen = new Set<string>()): number => {
               if (voteCache.has(id)) return voteCache.get(id)!;
@@ -180,6 +201,8 @@ export default function ClienteDashboardPage() {
                 fotoUrl: String(data.fotoUrl || ""),
                 votos: calculateVotes(node.id),
                 estimado: Number(data.estimacionVotos || 0),
+                matrizDirectos: (directChildren.get(node.id) || []).length,
+                matrizProfundidad: Math.max(0, depthOf(node.id) - 1),
               });
             }
             lideres += activeNodes.length;
@@ -202,7 +225,7 @@ export default function ClienteDashboardPage() {
           }
         }
 
-        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed });
+        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed, matrizDirectos, matrizProfundidad });
         setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
         setLiderSeleccionado(current => current && perfiles.some(p => p.id === current) ? current : (perfiles[0]?.id || ""));
         setLoading(false);
@@ -237,9 +260,8 @@ export default function ClienteDashboardPage() {
     { label: "Configuración de campaña", icon: "settings", href: "/configuracion-campana" },
     { label: "Mi red", icon: "network", href: "/mired" },
     { label: "Invitaciones a campañas", icon: "users", href: "/invitaciones" },
-    { label: "Integrantes", icon: "users" },
-    { label: "Territorio", icon: "map" },
-    { label: "Estadísticas", icon: "chart" },
+    { label: "Evolución histórica", icon: "chart", href: "/historico-campana" },
+
   ];
 
   return (
@@ -303,6 +325,22 @@ export default function ClienteDashboardPage() {
                 )}
               </button>
             ))}
+            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
+              <p className="px-3 py-2 text-xs font-extrabold uppercase tracking-wider text-blue-100">Medios</p>
+              {[
+                ...(canAccessGestion ? [{ label: "Autorizaciones y gestión", href: "/medios/gestion" }] : []),
+                { label: "Medios", href: "/medios" },
+                { label: "Galería", href: "/medios/galeria" },
+              ].map(item => (
+                <button
+                  key={item.href}
+                  onClick={() => { setMenuOpen(false); router.push(item.href); }}
+                  className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </nav>
         </div>
 
@@ -478,8 +516,8 @@ export default function ClienteDashboardPage() {
 
         <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm sm:px-5">
-            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><h2 className="mt-0.5 truncate text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2><p className="text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
-            <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Explorar Mi Red →</button>
+            <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2"><h2 className="text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2>{(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="max-w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm"><span className="mr-2 text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Lema de campaña</span><span className="text-sm font-extrabold italic text-blue-900">“{lema}”</span></div>:null;})()}</div><p className="mt-1 text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
+            <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Ver mi grupo de trabajo →</button>
           </section>
 
           {(() => {
@@ -490,11 +528,19 @@ export default function ClienteDashboardPage() {
             const avance = estimadoTotal > 0 ? Math.min(100, (votosRed / estimadoTotal) * 100) : 0;
             return (
               <>
-                <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard label="Estimado total" value={estimadoTotal.toLocaleString("es-CO")} foot="Suma de estimados manuales" icon="chart" />
-                  <MetricCard label="Votos de la multired" value={votosRed.toLocaleString("es-CO")} foot="Aportes de líderes y subniveles" icon="users" />
-                  <MetricCard label="Diferencia" value={diferencia.toLocaleString("es-CO")} foot="Estimado menos votos de la red" icon="levels" />
-                  <MetricCard label="Cumplimiento" value={`${avance.toFixed(1)}%`} foot="Votos de la red frente al estimado" icon="network" />
+                <section className="mt-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Resumen de multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, integrantes y votos.</p></div><button onClick={() => router.push("/mired")} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver mi grupo de trabajo →</button></div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div className="rounded-xl bg-blue-50 p-3"><strong className="block text-xl font-black text-blue-800">{redMetricas.lideres.toLocaleString("es-CO")}</strong><span className="text-[11px] text-blue-700">Líderes</span></div>
+                <div className="rounded-xl bg-cyan-50 p-3"><strong className="block text-xl font-black text-cyan-800">{redMetricas.integrantes.toLocaleString("es-CO")}</strong><span className="text-[11px] text-cyan-700">Integrantes</span></div>
+                <div className="rounded-xl bg-emerald-50 p-3"><strong className="block text-xl font-black text-emerald-800">{redMetricas.votosRed.toLocaleString("es-CO")}</strong><span className="text-[11px] text-emerald-700">Consolidado equipo</span></div>
+                <div className="rounded-xl bg-amber-50 p-3"><strong className="block text-xl font-black text-amber-800">{redMetricas.votosEstimados.toLocaleString("es-CO")}</strong><span className="text-[11px] text-amber-700">Estimado manual</span></div>
+                <div className="rounded-xl bg-violet-50 p-3"><strong className="block text-xl font-black text-violet-800">{redMetricas.matrizDirectos}x{redMetricas.matrizProfundidad}</strong><span className="text-[11px] text-violet-700">Matriz</span></div>
+              </div>
+              {(() => {const gap=redMetricas.votosEstimados-redMetricas.votosRed;const pct=redMetricas.votosEstimados>0?redMetricas.votosRed/redMetricas.votosEstimados*100:0;return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">Cumplimiento de la multired</span><strong className="text-blue-700">{pct.toFixed(1)}%</strong></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{width:`${Math.max(0,Math.min(100,pct))}%`}} /></div><p className="mt-2 text-[11px] text-slate-500">Diferencia entre estimado y votos: <strong className="text-slate-800">{gap.toLocaleString("es-CO")}</strong></p></div>})()}
+            </div>
+
                 </section>
 
                 <section className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -519,38 +565,43 @@ export default function ClienteDashboardPage() {
                     />
                   </div>
 
-                  <div className="mt-3 grid gap-2 md:grid-cols-3">
-                    {activas.length === 0 ? (
-                      <div className="md:col-span-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                        No hay campañas activas. Activa una campaña para consultar su proyección.
-                      </div>
-                    ) : (
-                      activas.map(c => (
-                        <div key={c.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-semibold text-slate-800">{c.nombreCampana}</p>
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">ACTIVA</span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-400">{c.candidato || "Campaña"}</p>
-                          <div className="mt-4 flex items-end justify-between gap-3">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-slate-400">Meta</p>
-                              <p className="mt-1 text-lg font-semibold text-slate-900">
-                                {Number(c.metaVotos || 0).toLocaleString("es-CO")}
-                              </p>
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              {c.tipo === "nacional" ? "Nacional" : c.municipio || c.departamento || "Territorio"}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                                     <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+                     <div className="flex flex-wrap items-center justify-between gap-3">
+                       <div><h3 className="text-sm font-bold text-slate-900">Gráfica de proyección por líder</h3><p className="mt-1 text-[11px] text-slate-500">Consulta todos los líderes por aporte calculado, con búsqueda y paginación.</p></div>
+                       <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold"><span className="flex items-center gap-1 text-blue-700"><i className="h-2.5 w-2.5 rounded-sm bg-blue-600"/> Aporte de red</span><span className="flex items-center gap-1 text-amber-700"><i className="h-2.5 w-2.5 rounded-sm bg-amber-400"/> Estimado manual</span></div>
+                     </div>
+                     <div className="mt-4 flex flex-wrap items-center gap-2">
+                       <input type="search" aria-label="Buscar líder en gráfica de proyección" placeholder="Buscar por nombre o ciudad..." value={busquedaProyeccion} onChange={e=>{setBusquedaProyeccion(e.target.value);setPaginaProyeccion(1);}} className="h-10 w-full max-w-sm rounded-xl border border-blue-200 bg-white px-3 text-xs outline-none focus:border-blue-500" />
+                       <label className="flex items-center gap-2 text-xs text-slate-600">Mostrar <select aria-label="Líderes por página" value={tamanoPaginaProyeccion} onChange={e=>{setTamanoPaginaProyeccion(Number(e.target.value));setPaginaProyeccion(1);}} className="h-10 rounded-lg border border-blue-200 bg-white px-2"><option value={5}>5</option><option value={10}>10</option><option value={50}>50</option><option value={100}>100</option></select></label>
+                     </div>
+                     {(()=>{
+                       const term=busquedaProyeccion.trim().toLocaleLowerCase("es");
+                       const filtrados=[...lideresResumen].filter(l=>!term||`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term)).sort((a,b)=>b.votos-a.votos);
+                       const paginas=Math.max(1,Math.ceil(filtrados.length/tamanoPaginaProyeccion));
+                       const actual=Math.min(paginaProyeccion,paginas);
+                       const visibles=filtrados.slice((actual-1)*tamanoPaginaProyeccion,actual*tamanoPaginaProyeccion);
+                       const max=Math.max(1,...filtrados.flatMap(l=>[l.votos,l.estimado]));
+                       return <>
+                         {visibles.length?<div className="mt-4 space-y-3">{visibles.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr] items-center gap-3"><div className="min-w-0" title={`${l.nombre} · Matriz ${l.matrizDirectos}x${l.matrizProfundidad}`}><span className="block truncate text-xs font-medium text-slate-700">{l.nombre}</span><span className="mt-0.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800">Matriz {l.matrizDirectos}x{l.matrizProfundidad}</span></div><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos.toLocaleString("es-CO")}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado.toLocaleString("es-CO")}</span></div></div></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">{term?"No hay líderes que coincidan con la búsqueda.":"Aún no hay líderes con datos para representar."}</p>}
+                         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3"><span className="text-xs text-slate-600">Mostrando {filtrados.length?(actual-1)*tamanoPaginaProyeccion+1:0}–{Math.min(actual*tamanoPaginaProyeccion,filtrados.length)} de {filtrados.length} líderes</span><div className="flex items-center gap-2"><button type="button" disabled={actual===1} onClick={()=>setPaginaProyeccion(actual-1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Anterior</button><span className="text-xs font-semibold text-slate-700">Página {actual} de {paginas}</span><button type="button" disabled={actual>=paginas} onClick={()=>setPaginaProyeccion(actual+1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Siguiente</button></div></div>
+                       </>;
+                     })()}
+                   </div>
+
                 </section></div>
                   <div className="min-w-0 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Ficha de líder</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><div className="relative w-full sm:w-[235px]"><input type="search" aria-label="Buscar líder por nombre o ciudad" placeholder="Buscar líder o ciudad..." value={busquedaLider} onChange={e=>setBusquedaLider(e.target.value)} className="w-full rounded-xl border border-sky-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />{busquedaLider.trim() && <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">{(() => {const term=busquedaLider.trim().toLocaleLowerCase("es");const matches=lideresResumen.filter(l=>`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term));return matches.length ? <>{matches.slice(0,8).map(l=><button key={l.id} type="button" onClick={()=>{setLiderSeleccionado(l.id);setBusquedaLider("");}} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"><span className="block truncate text-xs font-semibold text-slate-800">{l.nombre}</span><span className="block truncate text-[10px] text-slate-500">{l.ciudad}</span></button>)}{matches.length>8&&<p className="px-3 py-2 text-[10px] text-slate-500">Mostrando 8 de {matches.length}. Escribe más para precisar.</p>}</> : <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</p>;})()}</div>}</div></div>
-                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div></>})()}
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Líderes</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><div className="relative w-full sm:w-[235px]"><input type="search" aria-label="Buscar líder por nombre o ciudad" placeholder="Buscar líder o ciudad..." value={busquedaLider} onChange={e=>setBusquedaLider(e.target.value)} className="w-full rounded-xl border border-sky-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />{busquedaLider.trim() && <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">{(() => {const term=busquedaLider.trim().toLocaleLowerCase("es");const matches=lideresResumen.filter(l=>`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term));return matches.length ? <>{matches.slice(0,8).map(l=><button key={l.id} type="button" onClick={()=>{setLiderSeleccionado(l.id);setBusquedaLider("");}} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"><span className="block truncate text-xs font-semibold text-slate-800">{l.nombre}</span><span className="block truncate text-[10px] text-slate-500">{l.ciudad}</span></button>)}{matches.length>8&&<p className="px-3 py-2 text-[10px] text-slate-500">Mostrando 8 de {matches.length}. Escribe más para precisar.</p>}</> : <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</p>;})()}</div>}</div></div>
+                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div>
+                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div><h4 className="text-sm font-bold text-slate-900">Estimado vs. votos del líder</h4><p className="mt-1 text-[11px] text-slate-500">Comparación individual de {lider.nombre}. El aporte de red es calculado, no un resultado electoral verificado.</p></div>
+                        <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-blue-800">{lider.estimado>0?porcentaje.toFixed(1)+"%":"Sin estimado"}</span>
+                      </div>
+                      {(()=>{const max=Math.max(1,lider.estimado,lider.votos);return <div className="mt-5 space-y-5">
+                        {[{label:"Estimado manual",value:lider.estimado,color:"bg-amber-400",track:"bg-amber-100",text:"text-amber-800"},{label:"Aporte calculado de votos",value:lider.votos,color:"bg-blue-600",track:"bg-blue-100",text:"text-blue-800"}].map(row=><div key={row.label}><div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-700">{row.label}</span><strong className={`text-sm tabular-nums ${row.text}`}>{row.value.toLocaleString("es-CO")}</strong></div><div className={`h-7 overflow-hidden rounded-lg ${row.track}`}><div className={`h-full rounded-lg transition-all duration-300 ${row.color}`} style={{width:`${Math.max(0,row.value/max*100)}%`}}/></div></div>)}
+                        <p className="border-t border-blue-100 pt-3 text-[11px] text-slate-600">{lider.estimado>0?(lider.votos>=lider.estimado?"El aporte calculado alcanza o supera el estimado manual.":`Faltan ${(lider.estimado-lider.votos).toLocaleString("es-CO")} aportes calculados para alcanzar el estimado manual.`):"Este líder no tiene un estimado manual registrado."}</p>
+                      </div>;})()}
+                    </div></>})()}
                   </div>
                 </section>
               </>
@@ -598,18 +649,7 @@ export default function ClienteDashboardPage() {
             </div>
           </section>
 
-          <section className="mt-3 grid gap-3 xl:grid-cols-[1.3fr_1fr]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Resultados de la multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, integrantes y votos.</p></div><button onClick={() => router.push("/mired")} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver Mi Red →</button></div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-xl bg-blue-50 p-3"><strong className="block text-xl font-black text-blue-800">{redMetricas.lideres.toLocaleString("es-CO")}</strong><span className="text-[11px] text-blue-700">Líderes activos</span></div>
-                <div className="rounded-xl bg-cyan-50 p-3"><strong className="block text-xl font-black text-cyan-800">{redMetricas.integrantes.toLocaleString("es-CO")}</strong><span className="text-[11px] text-cyan-700">Integrantes</span></div>
-                <div className="rounded-xl bg-emerald-50 p-3"><strong className="block text-xl font-black text-emerald-800">{redMetricas.votosRed.toLocaleString("es-CO")}</strong><span className="text-[11px] text-emerald-700">Votos de la red</span></div>
-                <div className="rounded-xl bg-amber-50 p-3"><strong className="block text-xl font-black text-amber-800">{redMetricas.votosEstimados.toLocaleString("es-CO")}</strong><span className="text-[11px] text-amber-700">Estimado manual</span></div>
-              </div>
-              {(() => {const gap=redMetricas.votosEstimados-redMetricas.votosRed;const pct=redMetricas.votosEstimados>0?redMetricas.votosRed/redMetricas.votosEstimados*100:0;return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">Cumplimiento de la multired</span><strong className="text-blue-700">{pct.toFixed(1)}%</strong></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{width:`${Math.max(0,Math.min(100,pct))}%`}} /></div><p className="mt-2 text-[11px] text-slate-500">Diferencia entre estimado y votos: <strong className="text-slate-800">{gap.toLocaleString("es-CO")}</strong></p></div>})()}
-            </div>
-
+          <section className="mt-3 grid gap-3 xl:grid-cols-1">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-base font-semibold text-slate-900">Resumen de cuenta</p>
               <p className="mt-1 text-xs text-slate-400">Información principal de tu campaña.</p>
