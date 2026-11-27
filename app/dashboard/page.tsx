@@ -75,6 +75,7 @@ export default function ClienteDashboardPage() {
   const [hastaGrafica,setHastaGrafica]=useState("");
   const [puntoProyeccion, setPuntoProyeccion] = useState<number | null>(null);
   const [campanaProyeccion, setCampanaProyeccion] = useState("");
+  const [clienteId,setClienteId]=useState("");
   const [campanas, setCampanas] = useState<any[]>([]);
   const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
   const [fichaUrl, setFichaUrl] = useState("");
@@ -161,6 +162,10 @@ export default function ClienteDashboardPage() {
         const campSnap = await getDocs(collection(db, "clientes", userData.clienteId, "campanas"));
         const campRows = campSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
         setCampanas(campRows);
+        const saved=localStorage.getItem("ap:campana:"+userData.clienteId);
+        const selected=campRows.find(c=>c.id===saved)||campRows.find(c=>c.estado==="activa")||campRows[0];
+        if(selected)localStorage.setItem("ap:campana:"+userData.clienteId,selected.id);
+        setClienteId(userData.clienteId);
 
         // La multired utiliza nodos y personasRaiz; las estimaciones se guardan
         // en metricas/red y los registros se cuentan por responsable.
@@ -172,7 +177,7 @@ export default function ClienteDashboardPage() {
         let matrizProfundidad = 0;
         const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
         const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; inicio:number; metaElectoral:number; estimado:number; actual:number; altas:Array<{t:number;aporte:number;estimado:number;departamento:string;municipio:string;id:string;nombre:string}>}> = [];
-        for (const camp of campRows) {
+        for (const camp of campRows.filter(c=>c.id===selected?.id)) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
             const nodesSnap = await getDocs(collection(db, ...base, "nodos"));
@@ -244,7 +249,7 @@ export default function ClienteDashboardPage() {
         setProyecciones(proyeccionesCampana);
         try { const headers={Authorization:"Bearer "+await user.getIdToken()}; const [weekly,daily]=await Promise.all([fetch("/api/historico-campana",{headers,cache:"no-store"}),fetch("/api/historico-campana?diario=1",{headers,cache:"no-store"})]); if(!weekly.ok||!daily.ok)throw Error("Histórico no disponible");const [w,d]=await Promise.all([weekly.json(),daily.json()]);setCortesProyeccion([...(w.items||[]),...(d.items||[])]);setErrorCortes(false); } catch {setErrorCortes(true);}
         void user.getIdToken().then(token=>fetch("/api/historico-campana?diario=1",{method:"POST",headers:{Authorization:"Bearer "+token}})).then(r=>{if(!r.ok)console.warn("No se guardó el corte diario");}).catch(console.warn);
-        setCampanaProyeccion(proyeccionesCampana.find(p=>campRows.find(c=>c.id===p.id)?.estado==="activa")?.id || proyeccionesCampana[0]?.id || "");
+        setCampanaProyeccion(selected?.id||"");
         setRedMetricas({ integrantes, lideres, votosEstimados, votosRed, matrizDirectos, matrizProfundidad });
         setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
         setLiderSeleccionado(current => current && perfiles.some(p => p.id === current) ? current : (perfiles[0]?.id || ""));
@@ -309,7 +314,7 @@ export default function ClienteDashboardPage() {
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">
-              {campanas[0]?.nombreCampana || cliente?.nombreCampana || cliente?.nombreCliente}
+              {campanas.find(c=>c.id===campanaProyeccion)?.nombreCampana || cliente?.nombreCampana || cliente?.nombreCliente}
             </p>
             <p className="mt-0.5 truncate text-[11px] text-blue-100/65">
               {cliente?.partidoMovimiento || "Gestión de campaña"}
@@ -534,14 +539,14 @@ export default function ClienteDashboardPage() {
           </div>
         </header>
 
-        <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
+        <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6"><div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-white p-3"><label htmlFor="campana-global" className="shrink-0 text-xs font-bold text-blue-800">Campaña activa</label><select id="campana-global" value={campanaProyeccion} onChange={e=>{localStorage.setItem("ap:campana:"+clienteId,e.target.value);window.location.reload();}} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold">{campanas.map(c=><option key={c.id} value={c.id}>{c.nombreCampana||"Campaña"}</option>)}</select></div>
           <section className="rounded-2xl border border-emerald-100 bg-white px-3 py-2.5 shadow-sm sm:px-5 sm:py-3">
             <div className="flex items-center justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Centro de control</p><h2 className="mt-0.5 break-words text-base font-extrabold leading-tight text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2></div><button onClick={() => router.push("/mired")} className="shrink-0 whitespace-nowrap rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-800">Ver red →</button></div>
-            {(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5"><span className="mr-2 text-[10px] font-bold uppercase text-blue-600">Lema de campaña</span><span className="break-words text-xs font-extrabold italic text-blue-900 sm:text-sm">“{lema}”</span></div>:null;})()}
+            {(()=>{const activa=campanas.find(c=>c.id===campanaProyeccion);const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5"><span className="mr-2 text-[10px] font-bold uppercase text-blue-600">Lema de campaña</span><span className="break-words text-xs font-extrabold italic text-blue-900 sm:text-sm">“{lema}”</span></div>:null;})()}
           </section>
 
           {(() => {
-            const activas = campanas.filter(c => (c.estado || "inactiva") === "activa");
+            const activas = campanas.filter(c => c.id===campanaProyeccion && (c.estado || "inactiva") === "activa");
             const estimadoTotal = redMetricas.votosEstimados;
             const votosRed = redMetricas.votosRed;
             const diferencia = estimadoTotal - votosRed;
@@ -564,7 +569,7 @@ export default function ClienteDashboardPage() {
                 </section>
 
                 <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Ruta de proyección hacia las elecciones</h3><p className="mt-1 text-xs text-slate-500">Evolución acumulada del aporte calculado de los líderes y cortes registrados hasta la fecha electoral.</p></div><select aria-label="Campaña de proyección" value={campanaProyeccion} onChange={e=>{setCampanaProyeccion(e.target.value);setPuntoProyeccion(null);setFiltroDepto("");setFiltroMunicipio("");setFiltroSemanas("");setFiltroLider("");setBuscarLiderGrafica("");setDesdeGrafica("");setHastaGrafica("");}} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">{proyecciones.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></div>
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Ruta de proyección hacia las elecciones</h3><p className="mt-1 text-xs text-slate-500">Evolución acumulada del aporte calculado de los líderes y cortes registrados hasta la fecha electoral.</p></div></div>
                   {(()=>{
                     const p=proyecciones.find(v=>v.id===campanaProyeccion);
                     if(!p || !p.fecha || !Number.isFinite(p.metaElectoral) || p.metaElectoral<=0) return <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Configura la fecha de elección y la meta electoral en Configuración de campaña para visualizar la ruta.</p>;
