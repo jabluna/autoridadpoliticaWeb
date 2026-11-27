@@ -64,7 +64,7 @@ export default function ClienteDashboardPage() {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [cortesProyeccion, setCortesProyeccion] = useState<Array<{fechaCorte:string;porCampana?:Array<{id:string;aporteCalculado:number;estimadoManual:number}>}>>([]);
   const [errorCortes, setErrorCortes] = useState(false);
-  const [proyecciones, setProyecciones] = useState<Array<{id:string; nombre:string; fecha:string; inicio:number; estimado:number; actual:number}>>([]);
+  const [proyecciones, setProyecciones] = useState<Array<{id:string; nombre:string; fecha:string; inicio:number; estimado:number; actual:number; altas:Array<{t:number;aporte:number}>}>>([]);
   const [campanaProyeccion, setCampanaProyeccion] = useState("");
   const [campanas, setCampanas] = useState<any[]>([]);
   const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
@@ -162,7 +162,7 @@ export default function ClienteDashboardPage() {
         let matrizDirectos = 0;
         let matrizProfundidad = 0;
         const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
-        const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; inicio:number; estimado:number; actual:number}> = [];
+        const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; inicio:number; estimado:number; actual:number; altas:Array<{t:number;aporte:number}>}> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -217,7 +217,7 @@ export default function ClienteDashboardPage() {
             const counts = await Promise.all(activeNodes.map(n => getCountFromServer(collection(db, ...base, "nodos", n.id, "personas"))));
             registrados += counts.reduce((sum, count) => sum + count.data().count, 0);
             integrantes += registrados;
-            proyeccionesCampana.push({id:camp.id,nombre:camp.nombreCampana || "Campaña",fecha:camp.fechaEleccion || "",inicio:camp.creadoEn?.toMillis?.() ?? new Date(camp.creadoEn || camp.fechaCreacion || "").getTime(),estimado:activeNodes.reduce((sum,n)=>sum+Number(n.data().estimacionVotos || 0),0),actual:activeNodes.reduce((sum,n)=>sum+(n.data().multinodo===false?Math.max(1,Number(n.data().estimacionVotos)||1):1),0)});
+            proyeccionesCampana.push({id:camp.id,nombre:camp.nombreCampana || "Campaña",fecha:camp.fechaEleccion || "",inicio:camp.creadoEn?.toMillis?.() ?? new Date(camp.creadoEn || camp.fechaCreacion || "").getTime(),altas:activeNodes.map(doc=>{const n=doc.data();return {t:n.creadoEn?.toMillis?.() ?? new Date(n.creadoEn || n.createdAt || "").getTime(),aporte:n.multinodo===false?Math.max(1,Number(n.estimacionVotos)||1):1};}).filter(n=>Number.isFinite(n.t)),estimado:activeNodes.reduce((sum,n)=>sum+Number(n.data().estimacionVotos || 0),0),actual:activeNodes.reduce((sum,n)=>sum+(n.data().multinodo===false?Math.max(1,Number(n.data().estimacionVotos)||1):1),0)});
             // Estimación propia de cada líder: evita sumar subárboles varias veces.
             votosEstimados += activeNodes.reduce((sum, n) => sum + Number(n.data().estimacionVotos || 0), 0);
             // Misma regla que Mi Red: un líder con multinodo aporta 1;
@@ -555,7 +555,7 @@ export default function ClienteDashboardPage() {
                 </section>
 
                 <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Ruta de proyección hacia las elecciones</h3><p className="mt-1 text-xs text-slate-500">Evolución registrada del aporte calculado de la red hasta la fecha electoral.</p></div><select aria-label="Campaña de proyección" value={campanaProyeccion} onChange={e=>setCampanaProyeccion(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">{proyecciones.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></div>
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Ruta de proyección hacia las elecciones</h3><p className="mt-1 text-xs text-slate-500">Evolución acumulada del aporte calculado de los líderes y cortes registrados hasta la fecha electoral.</p></div><select aria-label="Campaña de proyección" value={campanaProyeccion} onChange={e=>setCampanaProyeccion(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">{proyecciones.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></div>
                   {(()=>{
                     const p=proyecciones.find(v=>v.id===campanaProyeccion);
                     if(!p || !p.fecha || !Number.isFinite(p.estimado) || p.estimado<=0) return <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Configura la fecha de elección y el estimado de los líderes para visualizar la ruta.</p>;
@@ -570,6 +570,12 @@ export default function ClienteDashboardPage() {
                     const inicio=Number.isFinite(p.inicio)?day(p.inicio):NaN;
                     const byDay=new Map<number,{t:number;v:number;meta:number}>();
                     for(const c of [...cortesProyeccion].sort((a,b)=>a.fechaCorte.localeCompare(b.fechaCorte))){const v=c.porCampana?.find(v=>v.id===p.id);const t=day(new Date(c.fechaCorte).getTime());if(v&&Number.isFinite(t)&&t<now.getTime()&&(!Number.isFinite(inicio)||t>=inicio)&&Number.isFinite(v.aporteCalculado))byDay.set(t,{t,v:v.aporteCalculado,meta:v.estimadoManual});}
+                    const primerCorte=Math.min(now.getTime(),...byDay.keys());
+                    const altasPorDia=new Map<number,number>();
+                    for(const alta of p.altas){const t=day(alta.t);if(t<primerCorte&&(!Number.isFinite(inicio)||t>=inicio))altasPorDia.set(t,(altasPorDia.get(t)||0)+alta.aporte);}
+                    let acumulado=0;
+                    if(Number.isFinite(inicio)&&inicio<primerCorte&&!altasPorDia.has(inicio))byDay.set(inicio,{t:inicio,v:0,meta:p.estimado});
+                    for(const [t,aporte] of [...altasPorDia.entries()].sort((a,b)=>a[0]-b[0])){acumulado+=aporte;byDay.set(t,{t,v:acumulado,meta:p.estimado});}
                     const points=[...byDay.values()].sort((a,b)=>a.t-b.t);
                     points.push({t:now.getTime(),v:p.actual,meta:p.estimado});
                     const first=Number.isFinite(inicio)?Math.min(inicio,points[0].t):points[0].t, last=Math.max(now.getTime(),end.getTime()), span=Math.max(86400000,last-first);
@@ -584,7 +590,7 @@ export default function ClienteDashboardPage() {
                     {points.map((v,i)=><circle key={i} cx={x(v.t)} cy={y(v.v)} r={i===points.length-1?6:4} fill={pointColor(v.v,v.meta)} stroke="white" strokeWidth="1.5"><title>{dateFmt(new Date(v.t))}: {fmt(v.v)} proyectados</title></circle>)}
                     <text x={x(now.getTime())} y={y(p.actual)-12} textAnchor={x(now.getTime())>800?"end":"start"} fontSize="12" fontWeight="bold" fill={color}>{fmt(p.actual)} actuales</text>
                     {[0,1,2,3,4].map(i=><text key={i} x={105+850*i/4} y="303" textAnchor={i===0?"start":i===4?"end":"middle"} fontSize="11" fill="#475569">{dateFmt(new Date(first+span*i/4))}</text>)}<text x="530" y="330" textAnchor="middle" fontSize="12" fill="#475569">{Number.isFinite(inicio)?dateFmt(new Date(inicio)):"Creación sin fecha registrada"} — Elecciones: {dateFmt(end)}</text></svg></div>
-                    <p className="mt-3 text-xs text-slate-500">{errorCortes?"No fue posible consultar el histórico. Se muestra el valor actual.":points.length===1?"Aún no hay cortes anteriores identificados para esta campaña. Se guardan cortes diarios al consultar el dashboard; los días sin registros no se reconstruyen.":"La línea conecta únicamente cortes registrados y el valor actual. No se inventan valores futuros."}</p></>;
+                    <p className="mt-3 text-xs text-slate-500">{errorCortes?"No fue posible consultar los cortes guardados. Se muestra la reconstrucción aproximada por fecha de registro y el valor actual.":points.length===1?"Aún no hay cortes anteriores identificados para esta campaña. Se guardan cortes diarios al consultar el dashboard; los días sin registros no se reconstruyen.":"Antes del primer corte, la curva reconstruye el aporte acumulado de los líderes actualmente activos según su fecha de creación y estimado vigente. Desde el primer corte utiliza los valores guardados. No es un histórico exacto de modificaciones anteriores."}</p></>;
                   })()}
                 </section>
 
