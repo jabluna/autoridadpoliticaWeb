@@ -64,7 +64,7 @@ export default function ClienteDashboardPage() {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [cortesProyeccion, setCortesProyeccion] = useState<Array<{fechaCorte:string;porCampana?:Array<{id:string;aporteCalculado:number;estimadoManual:number}>}>>([]);
   const [errorCortes, setErrorCortes] = useState(false);
-  const [proyecciones, setProyecciones] = useState<Array<{id:string; nombre:string; fecha:string; estimado:number; actual:number}>>([]);
+  const [proyecciones, setProyecciones] = useState<Array<{id:string; nombre:string; fecha:string; inicio:number; estimado:number; actual:number}>>([]);
   const [campanaProyeccion, setCampanaProyeccion] = useState("");
   const [campanas, setCampanas] = useState<any[]>([]);
   const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
@@ -162,7 +162,7 @@ export default function ClienteDashboardPage() {
         let matrizDirectos = 0;
         let matrizProfundidad = 0;
         const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
-        const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; estimado:number; actual:number}> = [];
+        const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; inicio:number; estimado:number; actual:number}> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -217,7 +217,7 @@ export default function ClienteDashboardPage() {
             const counts = await Promise.all(activeNodes.map(n => getCountFromServer(collection(db, ...base, "nodos", n.id, "personas"))));
             registrados += counts.reduce((sum, count) => sum + count.data().count, 0);
             integrantes += registrados;
-            proyeccionesCampana.push({id:camp.id,nombre:camp.nombreCampana || "Campaña",fecha:camp.fechaEleccion || "",estimado:activeNodes.reduce((sum,n)=>sum+Number(n.data().estimacionVotos || 0),0),actual:activeNodes.reduce((sum,n)=>sum+(n.data().multinodo===false?Math.max(1,Number(n.data().estimacionVotos)||1):1),0)});
+            proyeccionesCampana.push({id:camp.id,nombre:camp.nombreCampana || "Campaña",fecha:camp.fechaEleccion || "",inicio:camp.creadoEn?.toMillis?.() ?? new Date(camp.creadoEn || camp.fechaCreacion || "").getTime(),estimado:activeNodes.reduce((sum,n)=>sum+Number(n.data().estimacionVotos || 0),0),actual:activeNodes.reduce((sum,n)=>sum+(n.data().multinodo===false?Math.max(1,Number(n.data().estimacionVotos)||1):1),0)});
             // Estimación propia de cada líder: evita sumar subárboles varias veces.
             votosEstimados += activeNodes.reduce((sum, n) => sum + Number(n.data().estimacionVotos || 0), 0);
             // Misma regla que Mi Red: un líder con multinodo aporta 1;
@@ -233,7 +233,8 @@ export default function ClienteDashboardPage() {
         }
 
         setProyecciones(proyeccionesCampana);
-        try { const response = await fetch("/api/historico-campana",{headers:{Authorization:"Bearer "+await user.getIdToken()},cache:"no-store"}); if(!response.ok) throw Error("Histórico no disponible"); const result=await response.json(); setCortesProyeccion(Array.isArray(result.items)?result.items:[]); setErrorCortes(false); } catch { setErrorCortes(true); }
+        try { const headers={Authorization:"Bearer "+await user.getIdToken()}; const [weekly,daily]=await Promise.all([fetch("/api/historico-campana",{headers,cache:"no-store"}),fetch("/api/historico-campana?diario=1",{headers,cache:"no-store"})]); if(!weekly.ok||!daily.ok)throw Error("Histórico no disponible");const [w,d]=await Promise.all([weekly.json(),daily.json()]);setCortesProyeccion([...(w.items||[]),...(d.items||[])]);setErrorCortes(false); } catch {setErrorCortes(true);}
+        void user.getIdToken().then(token=>fetch("/api/historico-campana?diario=1",{method:"POST",headers:{Authorization:"Bearer "+token}})).then(r=>{if(!r.ok)console.warn("No se guardó el corte diario");}).catch(console.warn);
         setCampanaProyeccion(proyeccionesCampana.find(p=>campRows.find(c=>c.id===p.id)?.estado==="activa")?.id || proyeccionesCampana[0]?.id || "");
         setRedMetricas({ integrantes, lideres, votosEstimados, votosRed, matrizDirectos, matrizProfundidad });
         setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
@@ -565,20 +566,25 @@ export default function ClienteDashboardPage() {
                     const pct=p.actual/p.estimado*100;const color=colors[Math.min(4,Math.max(0,Math.ceil(pct/20)-1))];
                     const fmt=(v:number)=>Math.round(v).toLocaleString("es-CO");
                     const dateFmt=(d:Date)=>d.toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"numeric"});
-                    const points=cortesProyeccion.flatMap(c=>{const v=c.porCampana?.find(v=>v.id===p.id);const t=new Date(c.fechaCorte).getTime();return v&&Number.isFinite(t)&&t<now.getTime()&&Number.isFinite(v.aporteCalculado)?[{t,v:v.aporteCalculado,meta:v.estimadoManual}]:[];}).sort((a,b)=>a.t-b.t);
+                    const day=(t:number)=>{const d=new Date(t);d.setHours(0,0,0,0);return d.getTime();};
+                    const inicio=Number.isFinite(p.inicio)?day(p.inicio):NaN;
+                    const byDay=new Map<number,{t:number;v:number;meta:number}>();
+                    for(const c of [...cortesProyeccion].sort((a,b)=>a.fechaCorte.localeCompare(b.fechaCorte))){const v=c.porCampana?.find(v=>v.id===p.id);const t=day(new Date(c.fechaCorte).getTime());if(v&&Number.isFinite(t)&&t<now.getTime()&&(!Number.isFinite(inicio)||t>=inicio)&&Number.isFinite(v.aporteCalculado))byDay.set(t,{t,v:v.aporteCalculado,meta:v.estimadoManual});}
+                    const points=[...byDay.values()].sort((a,b)=>a.t-b.t);
                     points.push({t:now.getTime(),v:p.actual,meta:p.estimado});
-                    const first=points[0].t, last=Math.max(now.getTime(),end.getTime()), span=Math.max(86400000,last-first);
+                    const first=Number.isFinite(inicio)?Math.min(inicio,points[0].t):points[0].t, last=Math.max(now.getTime(),end.getTime()), span=Math.max(86400000,last-first);
                     const max=Math.max(1,p.estimado,...points.map(v=>v.v));const y=(v:number)=>280-v/max*240;const x=(t:number)=>105+(t-first)/span*850;
                     const pointColor=(v:number,meta:number)=>meta>0?colors[Math.min(4,Math.max(0,Math.ceil(v/meta*5)-1))]:"#64748b";
                     return <><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Proyectados actuales",fmt(p.actual)],["Estimado total",fmt(p.estimado)],["Cumplimiento",pct.toFixed(1)+"%"],["Días para elecciones",String(days)]].map(([label,value])=><div key={label} className="rounded-xl bg-slate-50 p-3"><strong className="block text-lg font-black" style={{color:label==="Cumplimiento"?color:undefined}}>{value}</strong><span className="text-xs text-slate-500">{label}</span></div>)}</div>
                     <div className="mt-4 overflow-x-auto"><svg role="img" aria-label="Gráfica de evolución registrada electoral" viewBox="0 0 1000 345" className="h-auto w-full min-w-[560px]">
                     {[0,1,2,3,4,5].map(i=><g key={i}><line x1="105" x2="955" y1={y(max*i/5)} y2={y(max*i/5)} stroke="#e2e8f0"/><text x="95" y={y(max*i/5)+4} textAnchor="end" fontSize="11" fill="#475569">{fmt(max*i/5)}</text></g>)}
                     <line x1="105" x2="105" y1="25" y2="280" stroke="#94a3b8"/><line x1="105" x2="955" y1="280" y2="280" stroke="#94a3b8"/><text transform="translate(20 160) rotate(-90)" textAnchor="middle" fontSize="12" fill="#475569">Votos proyectados</text>
+                    {points.slice(1).map((v,i)=><path key={"area"+i} d={`M ${x(points[i].t)} 280 L ${x(points[i].t)} ${y(points[i].v)} L ${x(v.t)} ${y(v.v)} L ${x(v.t)} 280 Z`} fill={pointColor(v.v,v.meta)} opacity=".28"/>)}
                     {points.slice(1).map((v,i)=><line key={i} x1={x(points[i].t)} y1={y(points[i].v)} x2={x(v.t)} y2={y(v.v)} stroke={pointColor(v.v,v.meta)} strokeWidth="3" strokeLinecap="round"/>)}
                     {points.map((v,i)=><circle key={i} cx={x(v.t)} cy={y(v.v)} r={i===points.length-1?6:4} fill={pointColor(v.v,v.meta)} stroke="white" strokeWidth="1.5"><title>{dateFmt(new Date(v.t))}: {fmt(v.v)} proyectados</title></circle>)}
                     <text x={x(now.getTime())} y={y(p.actual)-12} textAnchor={x(now.getTime())>800?"end":"start"} fontSize="12" fontWeight="bold" fill={color}>{fmt(p.actual)} actuales</text>
-                    {[0,1,2,3,4].map(i=><text key={i} x={105+850*i/4} y="303" textAnchor={i===0?"start":i===4?"end":"middle"} fontSize="11" fill="#475569">{dateFmt(new Date(first+span*i/4))}</text>)}<text x="530" y="330" textAnchor="middle" fontSize="12" fill="#475569">Fecha de elecciones: {dateFmt(end)}</text></svg></div>
-                    <p className="mt-3 text-xs text-slate-500">{errorCortes?"No fue posible consultar el histórico. Se muestra el valor actual.":points.length===1?"Aún no hay cortes anteriores identificados para esta campaña. Registra cortes semanales en Evolución histórica para visualizar las fluctuaciones.":"La línea conecta únicamente cortes registrados y el valor actual. No se inventan valores futuros."}</p></>;
+                    {[0,1,2,3,4].map(i=><text key={i} x={105+850*i/4} y="303" textAnchor={i===0?"start":i===4?"end":"middle"} fontSize="11" fill="#475569">{dateFmt(new Date(first+span*i/4))}</text>)}<text x="530" y="330" textAnchor="middle" fontSize="12" fill="#475569">{Number.isFinite(inicio)?dateFmt(new Date(inicio)):"Creación sin fecha registrada"} — Elecciones: {dateFmt(end)}</text></svg></div>
+                    <p className="mt-3 text-xs text-slate-500">{errorCortes?"No fue posible consultar el histórico. Se muestra el valor actual.":points.length===1?"Aún no hay cortes anteriores identificados para esta campaña. Se guardan cortes diarios al consultar el dashboard; los días sin registros no se reconstruyen.":"La línea conecta únicamente cortes registrados y el valor actual. No se inventan valores futuros."}</p></>;
                   })()}
                 </section>
 
