@@ -1,4 +1,6 @@
 "use client";
+import ElectoralChart from "@/components/ElectoralChart";
+import { useMediosGestionAccess } from "@/components/useMediosGestionAccess";
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -52,6 +54,7 @@ type Cliente = {
 
 export default function ClienteDashboardPage() {
   const router = useRouter();
+  const {canManage:canAccessGestion}=useMediosGestionAccess();
   const [loading, setLoading] = useState(true);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [nombre, setNombre] = useState("");
@@ -60,15 +63,33 @@ export default function ClienteDashboardPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
+  const [cortesProyeccion, setCortesProyeccion] = useState<Array<{fechaCorte:string;porCampana?:Array<{id:string;aporteCalculado:number;estimadoManual:number}>}>>([]);
+  const [errorCortes, setErrorCortes] = useState(false);
+  const [proyecciones, setProyecciones] = useState<Array<{id:string; nombre:string; fecha:string; inicio:number; metaElectoral:number; estimado:number; actual:number; altas:Array<{t:number;aporte:number;estimado:number;departamento:string;municipio:string;id:string;nombre:string}>}>>([]);
+  const [filtroDepto,setFiltroDepto]=useState("");
+  const [filtroMunicipio,setFiltroMunicipio]=useState("");
+  const [filtroSemanas,setFiltroSemanas]=useState("");
+  const [filtroLider,setFiltroLider]=useState("");
+  const [buscarLiderGrafica,setBuscarLiderGrafica]=useState("");
+  const [desdeGrafica,setDesdeGrafica]=useState("");
+  const [hastaGrafica,setHastaGrafica]=useState("");
+  const [puntoProyeccion, setPuntoProyeccion] = useState<number | null>(null);
+  const [campanaProyeccion, setCampanaProyeccion] = useState("");
   const [campanas, setCampanas] = useState<any[]>([]);
-  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }>>([]);
+  const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
+  const [fichaUrl, setFichaUrl] = useState("");
   const [liderSeleccionado, setLiderSeleccionado] = useState("");
   const [busquedaLider, setBusquedaLider] = useState("");
+  const [busquedaProyeccion, setBusquedaProyeccion] = useState("");
+  const [paginaProyeccion, setPaginaProyeccion] = useState(1);
+  const [tamanoPaginaProyeccion, setTamanoPaginaProyeccion] = useState(5);
   const [redMetricas, setRedMetricas] = useState({
     integrantes: 0,
     lideres: 0,
     votosEstimados: 0,
     votosRed: 0,
+    matrizDirectos: 0,
+    matrizProfundidad: 0,
   });
 
   useEffect(() => {
@@ -147,7 +168,10 @@ export default function ClienteDashboardPage() {
         let lideres = 0;
         let votosEstimados = 0;
         let votosRed = 0;
-        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number }> = [];
+        let matrizDirectos = 0;
+        let matrizProfundidad = 0;
+        const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
+        const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; inicio:number; metaElectoral:number; estimado:number; actual:number; altas:Array<{t:number;aporte:number;estimado:number;departamento:string;municipio:string;id:string;nombre:string}>}> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -159,6 +183,18 @@ export default function ClienteDashboardPage() {
               const parent = String(node.data().padreId || "");
               directChildren.set(parent, [...(directChildren.get(parent) || []), node.id]);
             }
+            // Matriz del nivel uno: cantidad de líderes directos × profundidad.
+            matrizDirectos += (directChildren.get("") || []).length;
+            const depthCache = new Map<string, number>();
+            const depthOf = (id: string, seen = new Set<string>()): number => {
+              if (depthCache.has(id)) return depthCache.get(id)!;
+              if (seen.has(id)) return 0;
+              const next = new Set(seen); next.add(id);
+              const depth = 1 + Math.max(0, ...(directChildren.get(id) || []).map(child => depthOf(child, next)));
+              depthCache.set(id, depth);
+              return depth;
+            };
+            matrizProfundidad = Math.max(matrizProfundidad, 0, ...(directChildren.get("") || []).map(id => depthOf(id)));
             const voteCache = new Map<string, number>();
             const calculateVotes = (id: string, seen = new Set<string>()): number => {
               if (voteCache.has(id)) return voteCache.get(id)!;
@@ -180,6 +216,8 @@ export default function ClienteDashboardPage() {
                 fotoUrl: String(data.fotoUrl || ""),
                 votos: calculateVotes(node.id),
                 estimado: Number(data.estimacionVotos || 0),
+                matrizDirectos: (directChildren.get(node.id) || []).length,
+                matrizProfundidad: Math.max(0, depthOf(node.id) - 1),
               });
             }
             lideres += activeNodes.length;
@@ -188,6 +226,7 @@ export default function ClienteDashboardPage() {
             const counts = await Promise.all(activeNodes.map(n => getCountFromServer(collection(db, ...base, "nodos", n.id, "personas"))));
             registrados += counts.reduce((sum, count) => sum + count.data().count, 0);
             integrantes += registrados;
+            proyeccionesCampana.push({id:camp.id,nombre:camp.nombreCampana || "Campaña",fecha:camp.fechaEleccion || "",metaElectoral:Math.max(0,Number(camp.metaVotos)||0),inicio:camp.creadoEn?.toMillis?.() ?? new Date(camp.creadoEn || camp.fechaCreacion || "").getTime(),altas:activeNodes.map(doc=>{const n=doc.data();return {id:doc.id,nombre:[n.nombre,n.apellido].filter(Boolean).join(" ")||doc.id,t:n.creadoEn?.toMillis?.() ?? new Date(n.creadoEn || n.createdAt || "").getTime(),aporte:n.multinodo===false?Math.max(1,Number(n.estimacionVotos)||1):1,estimado:Math.max(0,Number(n.estimacionVotos)||0),departamento:String(n.departamento||"Sin departamento").trim().toUpperCase(),municipio:String(n.ciudad||n.municipio||"Sin municipio").trim().toUpperCase()};}),estimado:activeNodes.reduce((sum,n)=>sum+Number(n.data().estimacionVotos || 0),0),actual:activeNodes.reduce((sum,n)=>sum+(n.data().multinodo===false?Math.max(1,Number(n.data().estimacionVotos)||1):1),0)});
             // Estimación propia de cada líder: evita sumar subárboles varias veces.
             votosEstimados += activeNodes.reduce((sum, n) => sum + Number(n.data().estimacionVotos || 0), 0);
             // Misma regla que Mi Red: un líder con multinodo aporta 1;
@@ -202,7 +241,11 @@ export default function ClienteDashboardPage() {
           }
         }
 
-        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed });
+        setProyecciones(proyeccionesCampana);
+        try { const headers={Authorization:"Bearer "+await user.getIdToken()}; const [weekly,daily]=await Promise.all([fetch("/api/historico-campana",{headers,cache:"no-store"}),fetch("/api/historico-campana?diario=1",{headers,cache:"no-store"})]); if(!weekly.ok||!daily.ok)throw Error("Histórico no disponible");const [w,d]=await Promise.all([weekly.json(),daily.json()]);setCortesProyeccion([...(w.items||[]),...(d.items||[])]);setErrorCortes(false); } catch {setErrorCortes(true);}
+        void user.getIdToken().then(token=>fetch("/api/historico-campana?diario=1",{method:"POST",headers:{Authorization:"Bearer "+token}})).then(r=>{if(!r.ok)console.warn("No se guardó el corte diario");}).catch(console.warn);
+        setCampanaProyeccion(proyeccionesCampana.find(p=>campRows.find(c=>c.id===p.id)?.estado==="activa")?.id || proyeccionesCampana[0]?.id || "");
+        setRedMetricas({ integrantes, lideres, votosEstimados, votosRed, matrizDirectos, matrizProfundidad });
         setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
         setLiderSeleccionado(current => current && perfiles.some(p => p.id === current) ? current : (perfiles[0]?.id || ""));
         setLoading(false);
@@ -237,9 +280,8 @@ export default function ClienteDashboardPage() {
     { label: "Configuración de campaña", icon: "settings", href: "/configuracion-campana" },
     { label: "Mi red", icon: "network", href: "/mired" },
     { label: "Invitaciones a campañas", icon: "users", href: "/invitaciones" },
-    { label: "Integrantes", icon: "users" },
-    { label: "Territorio", icon: "map" },
-    { label: "Estadísticas", icon: "chart" },
+    { label: "Evolución histórica", icon: "chart", href: "/historico-campana" },
+
   ];
 
   return (
@@ -303,6 +345,22 @@ export default function ClienteDashboardPage() {
                 )}
               </button>
             ))}
+            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
+              <p className="px-3 py-2 text-xs font-extrabold uppercase tracking-wider text-blue-100">Medios</p>
+              {[
+                ...(canAccessGestion ? [{ label: "Autorizaciones y gestión", href: "/medios/gestion" }] : []),
+                { label: "Medios", href: "/medios" },
+                { label: "Galería", href: "/medios/galeria" },
+              ].map(item => (
+                <button
+                  key={item.href}
+                  onClick={() => { setMenuOpen(false); router.push(item.href); }}
+                  className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </nav>
         </div>
 
@@ -478,8 +536,8 @@ export default function ClienteDashboardPage() {
 
         <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm sm:px-5">
-            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><h2 className="mt-0.5 truncate text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2><p className="text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
-            <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Explorar Mi Red →</button>
+            <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2"><h2 className="text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2>{(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="max-w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm"><span className="mr-2 text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Lema de campaña</span><span className="text-sm font-extrabold italic text-blue-900">“{lema}”</span></div>:null;})()}</div><p className="mt-1 text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
+            <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Ver mi grupo de trabajo →</button>
           </section>
 
           {(() => {
@@ -490,11 +548,79 @@ export default function ClienteDashboardPage() {
             const avance = estimadoTotal > 0 ? Math.min(100, (votosRed / estimadoTotal) * 100) : 0;
             return (
               <>
-                <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard label="Estimado total" value={estimadoTotal.toLocaleString("es-CO")} foot="Suma de estimados manuales" icon="chart" />
-                  <MetricCard label="Votos de la multired" value={votosRed.toLocaleString("es-CO")} foot="Aportes de líderes y subniveles" icon="users" />
-                  <MetricCard label="Diferencia" value={diferencia.toLocaleString("es-CO")} foot="Estimado menos votos de la red" icon="levels" />
-                  <MetricCard label="Cumplimiento" value={`${avance.toFixed(1)}%`} foot="Votos de la red frente al estimado" icon="network" />
+                <section className="mt-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Resumen de multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, personas registradas en reuniones y votos.</p></div><button onClick={() => router.push("/mired")} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver mi grupo de trabajo →</button></div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div className="rounded-xl bg-blue-50 p-3"><strong className="block text-xl font-black text-blue-800">{redMetricas.lideres.toLocaleString("es-CO")}</strong><span className="text-[11px] text-blue-700">Líderes</span></div>
+                <div className="rounded-xl bg-cyan-50 p-3"><strong className="block text-xl font-black text-cyan-800">{redMetricas.integrantes.toLocaleString("es-CO")}</strong><span className="text-[11px] text-cyan-700">Personas registradas en reuniones</span></div>
+                <div className="rounded-xl bg-emerald-50 p-3"><strong className="block text-xl font-black text-emerald-800">{redMetricas.votosRed.toLocaleString("es-CO")}</strong><span className="text-[11px] text-emerald-700">Consolidado equipo</span></div>
+                <div className="rounded-xl bg-amber-50 p-3"><strong className="block text-xl font-black text-amber-800">{redMetricas.votosEstimados.toLocaleString("es-CO")}</strong><span className="text-[11px] text-amber-700">Estimado manual</span></div>
+                <div className="rounded-xl bg-violet-50 p-3"><strong className="block text-xl font-black text-violet-800">{redMetricas.matrizDirectos}x{redMetricas.matrizProfundidad}</strong><span className="text-[11px] text-violet-700">Matriz</span></div>
+              </div>
+              {(() => {const gap=redMetricas.votosEstimados-redMetricas.votosRed;const pct=redMetricas.votosEstimados>0?redMetricas.votosRed/redMetricas.votosEstimados*100:0;return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">Cumplimiento de la multired</span><strong className="text-blue-700">{pct.toFixed(1)}%</strong></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{width:`${Math.max(0,Math.min(100,pct))}%`}} /></div><p className="mt-2 text-[11px] text-slate-500">Diferencia entre estimado y votos: <strong className="text-slate-800">{gap.toLocaleString("es-CO")}</strong></p></div>})()}
+            </div>
+
+                </section>
+
+                <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Ruta de proyección hacia las elecciones</h3><p className="mt-1 text-xs text-slate-500">Evolución acumulada del aporte calculado de los líderes y cortes registrados hasta la fecha electoral.</p></div><select aria-label="Campaña de proyección" value={campanaProyeccion} onChange={e=>{setCampanaProyeccion(e.target.value);setPuntoProyeccion(null);setFiltroDepto("");setFiltroMunicipio("");setFiltroSemanas("");setFiltroLider("");setBuscarLiderGrafica("");setDesdeGrafica("");setHastaGrafica("");}} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">{proyecciones.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></div>
+                  {(()=>{
+                    const p=proyecciones.find(v=>v.id===campanaProyeccion);
+                    if(!p || !p.fecha || !Number.isFinite(p.metaElectoral) || p.metaElectoral<=0) return <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Configura la fecha de elección y la meta electoral en Configuración de campaña para visualizar la ruta.</p>;
+                    const end=new Date(p.fecha+"T00:00:00");const now=new Date();now.setHours(0,0,0,0);
+                    if(!Number.isFinite(end.getTime()))return <p className="p-4 text-sm">Fecha de elección inválida.</p>;
+                    const days=Math.max(0,Math.round((end.getTime()-now.getTime())/86400000));
+                    const colors=["#dc2626","#f97316","#eab308","#2563eb","#16a34a"];
+                    const departamentos=Array.from(new Set(p.altas.map(n=>n.departamento))).sort((a,b)=>a.localeCompare(b,"es"));
+                    const municipios=Array.from(new Set(p.altas.filter(n=>!filtroDepto||n.departamento===filtroDepto).map(n=>n.municipio))).sort((a,b)=>a.localeCompare(b,"es"));
+                    const lideres=p.altas.filter(n=>(!filtroDepto||n.departamento===filtroDepto)&&(!filtroMunicipio||n.municipio===filtroMunicipio));
+                    const normalizarLider=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+                    const terminosLider=normalizarLider(buscarLiderGrafica).split(/\s+/).filter(Boolean);
+                    const rankingLider=(a:typeof lideres[number],b:typeof lideres[number])=>b.aporte-a.aporte||b.estimado-a.estimado||a.nombre.localeCompare(b.nombre,"es");
+                    const resultadosLider:typeof lideres=[];
+                    let coincidenciasLider=0;
+                    for(const n of lideres){if(terminosLider.length&&!terminosLider.every(t=>normalizarLider(n.nombre+" "+n.municipio+" "+n.departamento).includes(t)))continue;coincidenciasLider++;if(resultadosLider.length<10||rankingLider(n,resultadosLider[resultadosLider.length-1])<0){resultadosLider.push(n);resultadosLider.sort(rankingLider);if(resultadosLider.length>10)resultadosLider.pop();}}
+                    const liderActivo=filtroLider||(terminosLider.length&&coincidenciasLider===1?resultadosLider[0]?.id:"");
+                    const elegidoLider=lideres.find(n=>n.id===liderActivo);
+                    const filtrado=!!(filtroDepto||filtroMunicipio||liderActivo);
+                    const altas=lideres.filter(n=>!liderActivo||n.id===liderActivo);
+                    const actual=filtrado?altas.reduce((sum,n)=>sum+n.aporte,0):p.actual;
+                    const estimado=filtrado?altas.reduce((sum,n)=>sum+n.estimado,0):p.estimado;
+                    const individualGoal=liderActivo&&estimado>0?estimado:undefined;
+                    const target=individualGoal||p.metaElectoral;
+                    const pct=actual/target*100;const color=colors[Math.min(4,Math.max(0,Math.ceil(pct/20)-1))];
+                    const fmt=(v:number)=>Math.round(v).toLocaleString("es-CO");
+                    const dateFmt=(d:Date)=>d.toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"numeric"});
+                    const day=(t:number)=>{const d=new Date(t);d.setHours(0,0,0,0);return d.getTime();};
+                    const inicio=Number.isFinite(p.inicio)?day(p.inicio):NaN;
+                    const byDay=new Map<number,{t:number;v:number;meta:number}>();
+                    if(!filtrado) for(const c of [...cortesProyeccion].sort((a,b)=>a.fechaCorte.localeCompare(b.fechaCorte))){const v=c.porCampana?.find(v=>v.id===p.id);const t=day(new Date(c.fechaCorte).getTime());if(v&&Number.isFinite(t)&&t<now.getTime()&&(!Number.isFinite(inicio)||t>=inicio)&&Number.isFinite(v.aporteCalculado))byDay.set(t,{t,v:v.aporteCalculado,meta:v.estimadoManual});}
+                    const primerCorte=Math.min(now.getTime(),...byDay.keys());
+                    const altasPorDia=new Map<number,{aporte:number;estimado:number}>();
+                    for(const alta of altas){const t=day(alta.t);if(t<primerCorte&&(!Number.isFinite(inicio)||t>=inicio)){const prev=altasPorDia.get(t)||{aporte:0,estimado:0};altasPorDia.set(t,{aporte:prev.aporte+alta.aporte,estimado:prev.estimado+alta.estimado});}}
+                    let acumulado=0,estimadoAcumulado=0;
+                    if(Number.isFinite(inicio)&&inicio<primerCorte&&!altasPorDia.has(inicio))byDay.set(inicio,{t:inicio,v:0,meta:0});
+                    for(const [t,aporte] of [...altasPorDia.entries()].sort((a,b)=>a[0]-b[0])){acumulado+=aporte.aporte;estimadoAcumulado+=aporte.estimado;byDay.set(t,{t,v:acumulado,meta:estimadoAcumulado});}
+                    const allPoints=[...byDay.values()].sort((a,b)=>a.t-b.t);
+                    allPoints.push({t:now.getTime(),v:actual,meta:estimado});
+                    const monthAgo=(n:number)=>{const d=new Date(now);d.setDate(1);d.setMonth(d.getMonth()-n);const lastDay=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(now.getDate(),lastDay));return d.getTime();};
+                    const cutoff=filtroSemanas==="custom"?(desdeGrafica?new Date(desdeGrafica+"T00:00:00").getTime():-Infinity):filtroSemanas==="month"?monthAgo(1):filtroSemanas==="quarter"?monthAgo(3):filtroSemanas?new Date(now.getFullYear(),now.getMonth(),now.getDate()-Number(filtroSemanas)+1).getTime():-Infinity;
+                    const until=filtroSemanas==="custom"&&hastaGrafica?Math.min(now.getTime(),new Date(hastaGrafica+"T00:00:00").getTime()):now.getTime();
+                    const invalidRange=cutoff>until;const points=invalidRange?[]:allPoints.filter(v=>v.t>=cutoff&&v.t<=until);
+                    const prior=allPoints.filter(v=>v.t<cutoff).at(-1);if(!invalidRange&&prior&&Number.isFinite(cutoff)&&!points.some(v=>v.t===cutoff))points.unshift({...prior,t:cutoff});
+                    const emptyRange=points.length===0;if(emptyRange)points.push({t:Number.isFinite(cutoff)?Math.min(cutoff,until):until,v:0,meta:0});
+                    const first=filtroSemanas?Math.min(until,Math.max(Number.isFinite(inicio)?inicio:points[0].t,cutoff)):Number.isFinite(inicio)?Math.min(inicio,points[0].t):points[0].t, last=filtroSemanas?until:Math.max(now.getTime(),end.getTime());
+                    
+                    const pointColor=(v:number)=>colors[Math.min(4,Math.max(0,Math.ceil(v/target*5)-1))];
+                    const selectedIndex=Math.max(0,points.findIndex(v=>v.t===puntoProyeccion));const index=puntoProyeccion!==null&&points.some(v=>v.t===puntoProyeccion)?selectedIndex:points.length-1;const selected=points[index];const previous=points[index-1];const selectedColor=pointColor(selected.v);
+                    return <>{emptyRange?<p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">{invalidRange?"La fecha inicial debe ser anterior o igual a la final.":"No hay registros en el período seleccionado."}</p>:<><ElectoralChart points={points} first={first} last={last} goal={p.metaElectoral} individualGoal={individualGoal} election={end.getTime()} onSelect={setPuntoProyeccion}/>
+                    </>}
+<div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">{[["Meta electoral",fmt(p.metaElectoral)],[individualGoal?"Meta individual":"Estimados por líderes",fmt(estimado)],["Proyectados actuales",fmt(actual)],["Cumplimiento",pct.toFixed(1)+"%"],...(individualGoal?[["Aporte a meta general",(actual/p.metaElectoral*100).toFixed(1)+"%"]]:[]),["Días para elecciones",String(days)]].map(([label,value])=><div key={label} className="rounded-xl bg-slate-50 p-3"><strong className="block text-lg font-black" style={{color:label==="Cumplimiento"?color:undefined}}>{value}</strong><span className="text-xs text-slate-500">{label}</span></div>)}</div>
+                    <div className="mt-4 grid gap-3 lg:grid-cols-[3fr_2fr]"><div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3"><div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-bold text-slate-700">Filtros de la gráfica</h4><button className="text-xs font-bold text-blue-700" onClick={()=>{setFiltroDepto("");setFiltroMunicipio("");setFiltroSemanas("");setFiltroLider("");setBuscarLiderGrafica("");setDesdeGrafica("");setHastaGrafica("");setPuntoProyeccion(null);}}>Limpiar filtros</button></div><div className="grid gap-3 sm:grid-cols-2">{[{label:"Departamento",value:filtroDepto,options:departamentos,change:(v:string)=>{setFiltroDepto(v);setFiltroMunicipio("");setFiltroLider("");setBuscarLiderGrafica("");}},{label:"Municipio / ciudad",value:filtroMunicipio,options:municipios,change:(v:string)=>{setFiltroMunicipio(v);setFiltroLider("");setBuscarLiderGrafica("");}}].map(item=><label key={item.label} className="min-w-0 text-xs font-semibold text-slate-600">{item.label}<select value={item.value} onChange={e=>{item.change(e.target.value);setPuntoProyeccion(null);}} className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs"><option value="">Todos</option>{item.options.map(v=><option key={v} value={v}>{v}</option>)}</select></label>)}<label className="text-xs font-semibold text-slate-600">Período<select value={filtroSemanas} onChange={e=>{setFiltroSemanas(e.target.value);setPuntoProyeccion(null);}} className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs"><option value="">Toda la campaña</option>{[["1","Hoy"],["7","Últimos 7 días"],["15","Últimos 15 días"],["month","Último mes"],["quarter","Últimos 3 meses"],["custom","Personalizar"]].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label><div className="relative min-w-0"><label className="text-xs font-semibold text-slate-600" htmlFor="buscar-lider-grafica">Buscar líder</label><input id="buscar-lider-grafica" type="search" autoComplete="off" value={buscarLiderGrafica} onChange={e=>{setBuscarLiderGrafica(e.target.value);setFiltroLider("");setPuntoProyeccion(null);}} placeholder="Nombre, apellido o municipio..." className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs"/>{elegidoLider?<div className="mt-1 flex items-center justify-between gap-2 rounded-lg bg-blue-50 px-2 py-2 text-xs text-blue-800"><span>{elegidoLider.nombre} · {elegidoLider.municipio}</span><button type="button" aria-label="Quitar líder" onClick={()=>{setFiltroLider("");setBuscarLiderGrafica("");setPuntoProyeccion(null);}}>×</button></div>:buscarLiderGrafica.trim()&&<div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-sm">{resultadosLider.map(n=><button type="button" key={n.id} onClick={()=>{setFiltroLider(n.id);setBuscarLiderGrafica(n.nombre);setPuntoProyeccion(null);}} className="block w-full border-b border-slate-100 px-3 py-2 text-left text-xs hover:bg-blue-50"><span className="block font-semibold">{n.nombre}</span><span className="text-slate-500">{n.municipio} · {fmt(n.aporte)} votos</span></button>)}<p className="p-2 text-[11px] text-slate-500">{coincidenciasLider===0?"Sin coincidencias":coincidenciasLider+" coincidencias"+(coincidenciasLider>10?" · precisa la búsqueda":"")}</p></div>}</div>{filtroSemanas==="custom"&&<>{[["Desde",desdeGrafica,setDesdeGrafica],["Hasta",hastaGrafica,setHastaGrafica]].map(([label,value,setter])=><label key={String(label)} className="text-xs font-semibold text-slate-600">{String(label)}<input type="date" value={String(value)} onChange={e=>{(setter as (v:string)=>void)(e.target.value);setPuntoProyeccion(null);}} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs"/></label>)}</>}</div><p className="mt-3 text-xs text-slate-500">{altas.length} líderes activos coinciden. {individualGoal?" El cumplimiento se mide frente a la meta individual; la meta electoral general permanece visible.":" La meta electoral sigue siendo la de toda la campaña."}</p>{filtrado&&<p className="mt-2 text-xs text-amber-700">Vista filtrada reconstruida según las fichas vigentes; los cortes históricos globales no tienen desglose geográfico.</p>}</div><div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3"><h4 className="mb-3 text-xs font-bold text-slate-700">Cómo interpretar la gráfica</h4><div className="grid gap-2">{[{label:"Meta electoral",description:"Objetivo de votos definido en la campaña.",stroke:"#15803d",dash:"9 5",width:3},{label:"Estimados por líderes",description:"Suma de las estimaciones de los líderes.",stroke:"#64748b",dash:"5 4",width:2},{label:"Proyectados acumulados",description:"Aporte calculado de la red; el color indica el cumplimiento de la meta aplicable.",stroke:color,dash:undefined,width:3}].map(item=><div key={item.label} className="flex items-start gap-2"><svg viewBox="0 0 42 22" className="mt-0.5 h-5 w-10 shrink-0" aria-hidden="true">{!item.dash&&<path d="M1 17 L14 11 L25 14 L41 3 V21 H1 Z" fill={item.stroke} opacity=".25"/>}<path d={item.dash?"M1 11 H41":"M1 17 L14 11 L25 14 L41 3"} fill="none" stroke={item.stroke} strokeWidth={item.width} strokeDasharray={item.dash}/></svg><div><p className="text-xs font-bold text-slate-800">{item.label}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">{item.description}</p></div></div>)}</div></div></div>
+                    {!emptyRange&&<><div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold text-slate-700">Detalle del punto · {dateFmt(new Date(selected.t))}</p><div className="flex gap-2"><button disabled={index===0} onClick={()=>setPuntoProyeccion(points[index-1].t)} className="rounded-lg border bg-white px-3 py-1 text-xs disabled:opacity-40">Anterior</button><button disabled={index===points.length-1} onClick={()=>setPuntoProyeccion(points[index+1].t)} className="rounded-lg border bg-white px-3 py-1 text-xs disabled:opacity-40">Siguiente</button></div></div><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Proyectados acumulados",fmt(selected.v)],["Estimados por líderes",fmt(selected.meta)],["Cumplimiento",(selected.v/target*100).toFixed(1)+"%"],["Variación frente al punto anterior",previous?(selected.v-previous.v>0?"+":"")+fmt(selected.v-previous.v):"—"]].map(([label,value])=><div key={label}><strong className="block text-lg font-bold" style={{color:label==="Cumplimiento"?selectedColor:undefined}}>{value}</strong><span className="text-xs text-slate-500">{label}</span></div>)}</div><p className="mt-2 text-[11px] text-slate-500">Pasa el cursor o toca un punto para consultar su información. Consulta la leyenda superior para interpretar las líneas.</p></div></>}
+                    <p className="mt-3 text-xs text-slate-500">{filtrado?"Reconstrucción territorial aproximada según fecha de registro y valores vigentes de los líderes.":errorCortes?"No fue posible consultar los cortes guardados. Se muestra la reconstrucción aproximada por fecha de registro y el valor actual.":points.length===1?"Aún no hay cortes anteriores identificados para esta campaña. Se guardan cortes diarios al consultar el dashboard; los días sin registros no se reconstruyen.":"Antes del primer corte, la curva reconstruye el aporte acumulado de los líderes actualmente activos según su fecha de creación y estimado vigente. Desde el primer corte utiliza los valores guardados. No es un histórico exacto de modificaciones anteriores."}</p></>;
+                  })()}
                 </section>
 
                 <section className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -519,38 +645,43 @@ export default function ClienteDashboardPage() {
                     />
                   </div>
 
-                  <div className="mt-3 grid gap-2 md:grid-cols-3">
-                    {activas.length === 0 ? (
-                      <div className="md:col-span-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                        No hay campañas activas. Activa una campaña para consultar su proyección.
-                      </div>
-                    ) : (
-                      activas.map(c => (
-                        <div key={c.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-semibold text-slate-800">{c.nombreCampana}</p>
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">ACTIVA</span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-400">{c.candidato || "Campaña"}</p>
-                          <div className="mt-4 flex items-end justify-between gap-3">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-slate-400">Meta</p>
-                              <p className="mt-1 text-lg font-semibold text-slate-900">
-                                {Number(c.metaVotos || 0).toLocaleString("es-CO")}
-                              </p>
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                              {c.tipo === "nacional" ? "Nacional" : c.municipio || c.departamento || "Territorio"}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                                     <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+                     <div className="flex flex-wrap items-center justify-between gap-3">
+                       <div><h3 className="text-sm font-bold text-slate-900">Gráfica de proyección por líder</h3><p className="mt-1 text-[11px] text-slate-500">Consulta todos los líderes por aporte calculado, con búsqueda y paginación.</p></div>
+                       <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold"><span className="flex items-center gap-1 text-blue-700"><i className="h-2.5 w-2.5 rounded-sm bg-blue-600"/> Aporte de red</span><span className="flex items-center gap-1 text-amber-700"><i className="h-2.5 w-2.5 rounded-sm bg-amber-400"/> Estimado manual</span></div>
+                     </div>
+                     <div className="mt-4 flex flex-wrap items-center gap-2">
+                       <input type="search" aria-label="Buscar líder en gráfica de proyección" placeholder="Buscar por nombre o ciudad..." value={busquedaProyeccion} onChange={e=>{setBusquedaProyeccion(e.target.value);setPaginaProyeccion(1);}} className="h-10 w-full max-w-sm rounded-xl border border-blue-200 bg-white px-3 text-xs outline-none focus:border-blue-500" />
+                       <label className="flex items-center gap-2 text-xs text-slate-600">Mostrar <select aria-label="Líderes por página" value={tamanoPaginaProyeccion} onChange={e=>{setTamanoPaginaProyeccion(Number(e.target.value));setPaginaProyeccion(1);}} className="h-10 rounded-lg border border-blue-200 bg-white px-2"><option value={5}>5</option><option value={10}>10</option><option value={50}>50</option><option value={100}>100</option></select></label>
+                     </div>
+                     {(()=>{
+                       const term=busquedaProyeccion.trim().toLocaleLowerCase("es");
+                       const filtrados=[...lideresResumen].filter(l=>!term||`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term)).sort((a,b)=>b.votos-a.votos);
+                       const paginas=Math.max(1,Math.ceil(filtrados.length/tamanoPaginaProyeccion));
+                       const actual=Math.min(paginaProyeccion,paginas);
+                       const visibles=filtrados.slice((actual-1)*tamanoPaginaProyeccion,actual*tamanoPaginaProyeccion);
+                       const max=Math.max(1,...filtrados.flatMap(l=>[l.votos,l.estimado]));
+                       return <>
+                         {visibles.length?<div className="mt-4 space-y-3">{visibles.map(l=><div key={l.id} className="grid grid-cols-[minmax(90px,150px)_1fr_auto] items-center gap-3"><div className="min-w-0" title={`${l.nombre} · Matriz ${l.matrizDirectos}x${l.matrizProfundidad}`}><button type="button" onClick={()=>{const [campana,nodo]=l.id.split(":");setFichaUrl(`/mired?campana=${encodeURIComponent(campana)}&ficha=${encodeURIComponent(nodo)}`);}} className="block w-full truncate text-left text-xs font-bold text-blue-700 hover:underline">{l.nombre}</button><span className="mt-0.5 inline-block rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800">Matriz {l.matrizDirectos}x{l.matrizProfundidad}</span></div><div className="space-y-1"><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${Math.max(0,l.votos/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-blue-800">{l.votos.toLocaleString("es-CO")}</span></div><div className="flex items-center gap-2"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-400" style={{width:`${Math.max(0,l.estimado/max*100)}%`}}/></div><span className="w-12 text-right text-[11px] font-semibold tabular-nums text-amber-800">{l.estimado.toLocaleString("es-CO")}</span></div></div><button type="button" onClick={()=>{const [campana,nodo]=l.id.split(":");setFichaUrl(`/mired?campana=${encodeURIComponent(campana)}&ficha=${encodeURIComponent(nodo)}`);}} className="whitespace-nowrap rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100">Ver ficha ↗</button></div>)}</div>:<p className="mt-4 rounded-lg bg-white p-3 text-xs text-slate-500">{term?"No hay líderes que coincidan con la búsqueda.":"Aún no hay líderes con datos para representar."}</p>}
+                         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3"><span className="text-xs text-slate-600">Mostrando {filtrados.length?(actual-1)*tamanoPaginaProyeccion+1:0}–{Math.min(actual*tamanoPaginaProyeccion,filtrados.length)} de {filtrados.length} líderes</span><div className="flex items-center gap-2"><button type="button" disabled={actual===1} onClick={()=>setPaginaProyeccion(actual-1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Anterior</button><span className="text-xs font-semibold text-slate-700">Página {actual} de {paginas}</span><button type="button" disabled={actual>=paginas} onClick={()=>setPaginaProyeccion(actual+1)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40">Siguiente</button></div></div>
+                       </>;
+                     })()}
+                   </div>
+
                 </section></div>
                   <div className="min-w-0 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Ficha de líder</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><div className="relative w-full sm:w-[235px]"><input type="search" aria-label="Buscar líder por nombre o ciudad" placeholder="Buscar líder o ciudad..." value={busquedaLider} onChange={e=>setBusquedaLider(e.target.value)} className="w-full rounded-xl border border-sky-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />{busquedaLider.trim() && <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">{(() => {const term=busquedaLider.trim().toLocaleLowerCase("es");const matches=lideresResumen.filter(l=>`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term));return matches.length ? <>{matches.slice(0,8).map(l=><button key={l.id} type="button" onClick={()=>{setLiderSeleccionado(l.id);setBusquedaLider("");}} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"><span className="block truncate text-xs font-semibold text-slate-800">{l.nombre}</span><span className="block truncate text-[10px] text-slate-500">{l.ciudad}</span></button>)}{matches.length>8&&<p className="px-3 py-2 text-[10px] text-slate-500">Mostrando 8 de {matches.length}. Escribe más para precisar.</p>}</> : <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</p>;})()}</div>}</div></div>
-                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div></>})()}
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-900">Líderes</h3><p className="text-xs text-slate-500">Consulta individual de votos y estimado</p></div><div className="relative w-full sm:w-[235px]"><input type="search" aria-label="Buscar líder por nombre o ciudad" placeholder="Buscar líder o ciudad..." value={busquedaLider} onChange={e=>setBusquedaLider(e.target.value)} className="w-full rounded-xl border border-sky-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />{busquedaLider.trim() && <div className="absolute right-0 top-full z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">{(() => {const term=busquedaLider.trim().toLocaleLowerCase("es");const matches=lideresResumen.filter(l=>`${l.nombre} ${l.ciudad}`.toLocaleLowerCase("es").includes(term));return matches.length ? <>{matches.slice(0,8).map(l=><button key={l.id} type="button" onClick={()=>{setLiderSeleccionado(l.id);setBusquedaLider("");}} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"><span className="block truncate text-xs font-semibold text-slate-800">{l.nombre}</span><span className="block truncate text-[10px] text-slate-500">{l.ciudad}</span></button>)}{matches.length>8&&<p className="px-3 py-2 text-[10px] text-slate-500">Mostrando 8 de {matches.length}. Escribe más para precisar.</p>}</> : <p className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</p>;})()}</div>}</div></div>
+                    {(() => {const lider=lideresResumen.find(l=>l.id===liderSeleccionado);if(!lider)return <p className="mt-5 text-sm text-slate-500">No hay líderes registrados para mostrar.</p>;const porcentaje=lider.estimado>0?lider.votos/lider.estimado*100:0;return <><div className="mt-4 flex items-center gap-3">{lider.fotoUrl?<img src={lider.fotoUrl} alt={lider.nombre} className="h-16 w-16 rounded-2xl border border-sky-200 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-100 text-xl font-bold text-sky-800">{lider.nombre.slice(0,2).toUpperCase()}</div>}<div className="min-w-0"><p className="truncate text-lg font-bold text-slate-900">{lider.nombre}</p><p className="text-xs text-slate-500">📍 {lider.ciudad}</p></div></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-2"><strong className="block text-lg text-emerald-800">{lider.votos.toLocaleString("es-CO")}</strong><span className="text-[10px] text-emerald-700">Votos</span></div><div className="rounded-xl bg-amber-50 p-2"><strong className="block text-lg text-amber-800">{lider.estimado.toLocaleString("es-CO")}</strong><span className="text-[10px] text-amber-700">Estimado</span></div><div className="rounded-xl bg-violet-50 p-2"><strong className="block text-lg text-violet-800">{(lider.estimado-lider.votos).toLocaleString("es-CO")}</strong><span className="text-[10px] text-violet-700">Diferencia</span></div></div><div className="mt-3 flex justify-between text-xs text-slate-500"><span>Cumplimiento</span><strong>{lider.estimado>0?`${porcentaje.toFixed(1)}%`:"Sin estimado"}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{width:`${Math.min(100,Math.max(0,porcentaje))}%`}} /></div>
+                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div><h4 className="text-sm font-bold text-slate-900">Estimado vs. votos del líder</h4><p className="mt-1 text-[11px] text-slate-500">Comparación individual de {lider.nombre}. El aporte de red es calculado, no un resultado electoral verificado.</p></div>
+                        <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-blue-800">{lider.estimado>0?porcentaje.toFixed(1)+"%":"Sin estimado"}</span>
+                      </div>
+                      {(()=>{const max=Math.max(1,lider.estimado,lider.votos);return <div className="mt-5 space-y-5">
+                        {[{label:"Estimado manual",value:lider.estimado,color:"bg-amber-400",track:"bg-amber-100",text:"text-amber-800"},{label:"Aporte calculado de votos",value:lider.votos,color:"bg-blue-600",track:"bg-blue-100",text:"text-blue-800"}].map(row=><div key={row.label}><div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-700">{row.label}</span><strong className={`text-sm tabular-nums ${row.text}`}>{row.value.toLocaleString("es-CO")}</strong></div><div className={`h-7 overflow-hidden rounded-lg ${row.track}`}><div className={`h-full rounded-lg transition-all duration-300 ${row.color}`} style={{width:`${Math.max(0,row.value/max*100)}%`}}/></div></div>)}
+                        <p className="border-t border-blue-100 pt-3 text-[11px] text-slate-600">{lider.estimado>0?(lider.votos>=lider.estimado?"El aporte calculado alcanza o supera el estimado manual.":`Faltan ${(lider.estimado-lider.votos).toLocaleString("es-CO")} aportes calculados para alcanzar el estimado manual.`):"Este líder no tiene un estimado manual registrado."}</p>
+                      </div>;})()}
+                    </div></>})()}
                   </div>
                 </section>
               </>
@@ -598,18 +729,7 @@ export default function ClienteDashboardPage() {
             </div>
           </section>
 
-          <section className="mt-3 grid gap-3 xl:grid-cols-[1.3fr_1fr]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Resultados de la multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, integrantes y votos.</p></div><button onClick={() => router.push("/mired")} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver Mi Red →</button></div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-xl bg-blue-50 p-3"><strong className="block text-xl font-black text-blue-800">{redMetricas.lideres.toLocaleString("es-CO")}</strong><span className="text-[11px] text-blue-700">Líderes activos</span></div>
-                <div className="rounded-xl bg-cyan-50 p-3"><strong className="block text-xl font-black text-cyan-800">{redMetricas.integrantes.toLocaleString("es-CO")}</strong><span className="text-[11px] text-cyan-700">Integrantes</span></div>
-                <div className="rounded-xl bg-emerald-50 p-3"><strong className="block text-xl font-black text-emerald-800">{redMetricas.votosRed.toLocaleString("es-CO")}</strong><span className="text-[11px] text-emerald-700">Votos de la red</span></div>
-                <div className="rounded-xl bg-amber-50 p-3"><strong className="block text-xl font-black text-amber-800">{redMetricas.votosEstimados.toLocaleString("es-CO")}</strong><span className="text-[11px] text-amber-700">Estimado manual</span></div>
-              </div>
-              {(() => {const gap=redMetricas.votosEstimados-redMetricas.votosRed;const pct=redMetricas.votosEstimados>0?redMetricas.votosRed/redMetricas.votosEstimados*100:0;return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">Cumplimiento de la multired</span><strong className="text-blue-700">{pct.toFixed(1)}%</strong></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{width:`${Math.max(0,Math.min(100,pct))}%`}} /></div><p className="mt-2 text-[11px] text-slate-500">Diferencia entre estimado y votos: <strong className="text-slate-800">{gap.toLocaleString("es-CO")}</strong></p></div>})()}
-            </div>
-
+          <section className="mt-3 grid gap-3 xl:grid-cols-1">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-base font-semibold text-slate-900">Resumen de cuenta</p>
               <p className="mt-1 text-xs text-slate-400">Información principal de tu campaña.</p>
@@ -635,7 +755,7 @@ export default function ClienteDashboardPage() {
           </section>
         </div>
       </div>
-    </main>
+    {fichaUrl && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3"><section className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"><header className="flex items-center justify-between border-b p-4"><h2 className="font-bold">Ficha del líder</h2><button onClick={()=>setFichaUrl("")} className="rounded-lg border px-4 py-2 text-xs font-bold">Cerrar ×</button></header><iframe title="Ficha del líder de Mi red" src={fichaUrl} className="min-h-0 w-full flex-1 border-0" /></section></div>}</main>
   );
 }
 

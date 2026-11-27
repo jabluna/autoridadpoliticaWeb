@@ -36,11 +36,30 @@ export async function GET(request: NextRequest) {
   try {
     const ctx = await context(request);
     if (!ctx) return fail("Inicia sesión con un correo verificado.", 401);
+    const term = String(request.nextUrl.searchParams.get("buscar") || "").trim();
+    if (term) {
+      if (ctx.user.get("rol") !== "cliente_admin") return fail("Solo el propietario puede buscar cuentas para invitar.",403);
+      if (term.length < 3 || term.length > 100) return fail("Escribe entre 3 y 100 caracteres.",400);
+      const normalized = normalize(term);
+      const digits = term.replace(/\D/g,"");
+      const candidates = new Map<string,FirebaseFirestore.QueryDocumentSnapshot>();
+      const add = (snap: FirebaseFirestore.QuerySnapshot) => snap.docs.forEach(d => candidates.set(d.id,d));
+      const searches: Promise<FirebaseFirestore.QuerySnapshot>[] = [];
+      if (term.includes("@")) searches.push(ctx.db.collection("clientes").where("email","==",term.toLowerCase()).limit(10).get());
+      if (digits.length >= 7) for (const phone of new Set([digits,digits.startsWith("57")?digits.slice(2):`57${digits}`,`+${digits.startsWith("57")?digits:`57${digits}`}`])) searches.push(ctx.db.collection("clientes").where("telefono","==",phone).limit(10).get());
+      // Búsqueda por nombre visible. No se exponen datos de redes ni cuentas de acceso.
+      searches.push(ctx.db.collection("clientes").orderBy("nombreCliente").startAt(term).endAt(term+"\uf8ff").limit(20).get());
+      for (const result of await Promise.all(searches)) add(result);
+      const filtered = [...candidates.values()].filter(d => d.get("estado") !== "inactivo" && d.get("planActivo") !== false && d.id !== ctx.user.get("clienteId") && d.get("authUid"));
+      const users = await Promise.all(filtered.slice(0,20).map(async d => ({d,u:await ctx.db.doc(`usuarios/${d.get("authUid")}`).get()})));
+      const resultados = users.filter(({d,u}) => u.exists && u.get("rol") === "cliente_admin" && u.get("estado") !== "inactivo" && u.get("clienteId") === d.id).map(({d,u}) => ({id:d.id,nombre:String(d.get("nombreCliente") || [u.get("nombre"),u.get("apellido")].filter(Boolean).join(" ") || "Cliente"),telefono:String(d.get("telefono")||""),correo:String(d.get("email")||"")}));
+      return NextResponse.json({resultados},{headers:{"Cache-Control":"no-store"}});
+    }
     const snap = await ctx.db.collection("invitacionesRed").where("destinatarioUid", "==", ctx.uid).limit(100).get();
     const now = Date.now();
     return NextResponse.json({ invitaciones: snap.docs.map(d => {
       const x = d.data(), expired = x.expiraEn?.toMillis?.() < now;
-      return { id: d.id, campanaNombre: x.campanaNombre, categoria: x.categoria, estado: expired && x.estado === "pendiente" ? "expirada" : x.estado, emisorNombre: x.emisorNombre, expiraEn: x.expiraEn?.toDate?.()?.toISOString?.(), aceptadaEn: x.respondidaEn?.toDate?.()?.toISOString?.(), retiradaEn: x.retiradaEn?.toDate?.()?.toISOString?.() };
+      return { id: d.id, campanaNombre: x.campanaNombre, clienteId: x.clienteId, campanaId: x.campanaId, categoria: x.categoria, estado: expired && x.estado === "pendiente" ? "expirada" : x.estado, emisorNombre: x.emisorNombre, expiraEn: x.expiraEn?.toDate?.()?.toISOString?.(), aceptadaEn: x.respondidaEn?.toDate?.()?.toISOString?.(), retiradaEn: x.retiradaEn?.toDate?.()?.toISOString?.() };
     }) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { console.error("Invitaciones GET", error); return fail("No fue posible consultar las invitaciones.", 503); }
 }
@@ -51,12 +70,18 @@ export async function POST(request: NextRequest) {
     if (ctx.user.get("rol") !== "cliente_admin") return fail("Solo el administrador de campaña puede invitar en esta etapa.", 403);
     const clienteId = String(ctx.user.get("clienteId") || "");
     const body = await request.json() as Record<string, unknown>;
-    const campanaId = body?.campanaId, phone = String(body?.telefono || "").replace(/[^0-9]/g, "");
-    if (typeof campanaId !== "string" || !/^[a-zA-Z0-9_-]{1,150}$/.test(campanaId) || phone.length < 10 || phone.length > 15) return fail("Campaña o número de WhatsApp inválido.", 400);
+    const campanaId = body?.campanaId, phone = String(body?.telefono || "").replace(/[^0-9]/g, ""), destinatarioClienteId = String(body?.destinatarioClienteId || "");
+    if (typeof campanaId !== "string" || !/^[a-zA-Z0-9_-]{1,150}$/.test(campanaId) || (!destinatarioClienteId && (phone.length < 10 || phone.length > 15))) return fail("Campaña o número de WhatsApp inválido.", 400);
     const localPhone = phone.startsWith("57") && phone.length === 12 ? phone.slice(2) : phone;
     const candidates = [...new Set([phone, localPhone, `57${localPhone}`, `+57${localPhone}`])];
     const found = await Promise.all(candidates.map(telefono => ctx.db.collection("clientes").where("telefono", "==", telefono).limit(3).get()));
     const matched = new Map(found.flatMap(s => s.docs).map(d => [d.id, d]));
+    if (destinatarioClienteId) {
+      if (!/^[a-zA-Z0-9_-]{1,150}$/.test(destinatarioClienteId)) return fail("Destinatario inválido.",400);
+      const selected = await ctx.db.doc(`clientes/${destinatarioClienteId}`).get();
+      matched.clear();
+      if (selected.exists) matched.set(selected.id,selected as FirebaseFirestore.QueryDocumentSnapshot);
+    }
     if (matched.size !== 1) return fail("No se encontró un único cliente registrado con ese número de WhatsApp.", 404);
     const recipient = [...matched.values()][0];
     if (recipient.get("estado") === "inactivo" || recipient.get("planActivo") === false) return fail("El destinatario no tiene un cliente activo.", 403);
@@ -73,12 +98,54 @@ export async function POST(request: NextRequest) {
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await ctx.db.doc(`invitacionesRed/${id}`).create({
       emisorUid: ctx.uid, emisorNombre: String(ctx.user.get("nombre") || client.get("nombreCliente") || "Administrador"),
-      destinatarioEmail: email, destinatarioUid: recipientUid, destinatarioTelefono: phone, clienteId, campanaId, campanaNombre: String(campaign.get("nombreCampana") || client.get("nombreCampana") || "Campaña"),
+      destinatarioEmail: email, destinatarioUid: recipientUid, destinatarioTelefono: String(recipient.get("telefono") || phone), clienteId, campanaId, campanaNombre: String(campaign.get("nombreCampana") || client.get("nombreCampana") || "Campaña"),
       categoria: category, estado: "pendiente", accesoCompartido: false,
       creadoEn: FieldValue.serverTimestamp(), expiraEn: expires,
     });
-    return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category, telefono: phone }, { status: 201 });
+    return NextResponse.json({ id, expiraEn: expires.toISOString(), categoria: category, telefono: String(recipient.get("telefono") || phone) }, { status: 201 });
   } catch (error) { console.error("Invitaciones POST", error); return fail("No fue posible crear la invitación.", 503); }
+}
+// La copia se almacena bajo el ID de la invitación; no se consulta la red viva tras el retiro.
+async function congelarRed(db: ReturnType<typeof getFirestore>, id: string, clienteId: string, categoria: string) {
+  const archive = db.doc(`historicosRedesVinculadas/${id}`);
+  const existing = await archive.get();
+  if (existing.exists && existing.get("estado") === "listo") return;
+  const campaigns = await db.collection(`clientes/${clienteId}/campanas`).get();
+  const matching = campaigns.docs.filter(d => categoryOf(d.get("corporacion") || d.get("cargoAspirado") || d.get("cargo") || d.get("tipoCampana")) === categoria);
+  const source = matching.length === 1 ? matching[0] : campaigns.docs.length === 1 ? campaigns.docs[0] : null;
+  if (!source) throw new Error("No se pudo identificar una única campaña de origen para congelar el histórico.");
+  const base = `clientes/${clienteId}/campanas/${source.id}`;
+  const nodes = await db.collection(`${base}/nodos`).get();
+  const rootPeople = await db.collection(`${base}/personasRaiz`).get();
+  const meetings = await db.collection(`${base}/reuniones`).get();
+  const records: Array<{ tipo: string; id: string; responsableId?: string; datos: Record<string, unknown> }> = [];
+  const clean = (value: unknown): unknown => {
+    if (value && typeof value === "object" && "toDate" in value && typeof (value as {toDate?: unknown}).toDate === "function") return (value as {toDate: () => Date}).toDate().toISOString();
+    if (Array.isArray(value)) return value.map(clean);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,clean(v)]));
+    return value ?? null;
+  };
+  const add = (tipo: string, id: string, datos: Record<string, unknown>, responsableId?: string) => records.push({tipo,id,...(responsableId ? {responsableId} : {}),datos:clean(datos) as Record<string,unknown>});
+  for (const n of nodes.docs) {
+    add("lider",n.id,n.data());
+    const people = await db.collection(`${base}/nodos/${n.id}/personas`).get();
+    for (const p of people.docs) add("persona",p.id,p.data(),n.id);
+  }
+  for (const p of rootPeople.docs) add("persona",p.id,p.data());
+  for (const m of meetings.docs) add("reunion",m.id,m.data());
+  // Fragmentos pequeños para respetar el límite de 1 MiB por documento.
+  const chunks: typeof records[] = [];
+  let current: typeof records = []; let size = 0;
+  for (const record of records) {
+    const bytes = Buffer.byteLength(JSON.stringify(record),"utf8");
+    if (bytes > 450000) throw new Error("Un registro excede el tamaño permitido para el histórico.");
+    if (size + bytes > 450000 && current.length) { chunks.push(current); current=[]; size=0; }
+    current.push(record); size+=bytes;
+  }
+  if (current.length) chunks.push(current);
+  await archive.set({estado:"preparando",campanaOrigenId:source.id,clientePropietarioId:clienteId,cantidadRegistros:records.length,cantidadFragmentos:chunks.length,actualizadoEn:FieldValue.serverTimestamp()});
+  for (let i=0;i<chunks.length;i++) await archive.collection("fragmentos").doc(String(i).padStart(7,"0")).set({registros:chunks[i]});
+  await archive.update({estado:"listo",congeladoEn:FieldValue.serverTimestamp()});
 }
 export async function PATCH(request: NextRequest) {
   try {
@@ -88,6 +155,14 @@ export async function PATCH(request: NextRequest) {
     const id = body?.id, decision = body?.decision;
     if (typeof id !== "string" || !/^[a-f0-9]{48}$/.test(id) || !["aceptar", "rechazar", "retirar"].includes(String(decision))) return fail("Solicitud inválida.", 400);
     const invitation = ctx.db.doc(`invitacionesRed/${id}`);
+    if (decision === "retirar") {
+      const pre = await invitation.get();
+      if (!pre.exists || pre.get("destinatarioUid") !== ctx.uid || pre.get("estado") !== "aceptada" || ctx.user.get("rol") !== "cliente_admin") return fail("No hay una vinculación activa que puedas retirar.", 409);
+      const link = await ctx.db.doc(`vinculacionesCampana/${id}`).get();
+      if (!link.exists || link.get("estado") !== "activa" || link.get("propietarioUid") !== ctx.uid || link.get("clientePropietarioId") !== ctx.user.get("clienteId")) return fail("La vinculación no es consistente.",409);
+      try { await congelarRed(ctx.db,id,String(ctx.user.get("clienteId")),String(pre.get("categoria")||"")); }
+      catch(e) { return fail(e instanceof Error ? e.message : "No fue posible conservar el histórico; el retiro no se realizó.", 409); }
+    }
     const result = await ctx.db.runTransaction(async tx => {
       const snap = await tx.get(invitation);
       if (!snap.exists || snap.get("destinatarioUid") !== ctx.uid) return { status: 404, error: "Invitación no encontrada." };
@@ -105,6 +180,8 @@ export async function PATCH(request: NextRequest) {
             link.get("campanaReceptoraId") !== snap.get("campanaId")) {
           return { status: 409, error: "No se encontró una vinculación activa y consistente." };
         }
+        const archive = await tx.get(ctx.db.doc(`historicosRedesVinculadas/${id}`));
+        if (!archive.exists || archive.get("estado") !== "listo") return { status: 409, error: "No se completó el histórico. No se puede retirar la red." };
         const historicName = String((ownerHistory.exists ? ownerHistory.get("nombreCliente") : "") || ctx.user.get("nombre") || "Red desvinculada");
         // Revocar el acceso y liberar la categoría en una sola transacción.
         tx.update(ownerRef, { estado: "retirada", accesoCompartido: false, retiradaEn: FieldValue.serverTimestamp() });

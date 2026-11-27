@@ -19,6 +19,17 @@ export async function GET(request: NextRequest) {
     if (!clienteId || !/^[a-zA-Z0-9_-]{1,150}$/.test(campanaId)) return fail("Campaña inválida.", 400);
     const [client, campaign] = await Promise.all([db.doc(`clientes/${clienteId}`).get(), db.doc(`clientes/${clienteId}/campanas/${campanaId}`).get()]);
     if (!client.exists || client.get("estado") === "inactivo" || client.get("planActivo") === false || !campaign.exists) return fail("Campaña no autorizada.", 403);
+    const historicoId = request.nextUrl.searchParams.get("historicoId");
+    if (historicoId) {
+      if (!/^[a-f0-9]{48}$/.test(historicoId)) return fail("Histórico inválido.",400);
+      const [link, archive] = await Promise.all([db.doc(`vinculacionesCampana/${historicoId}`).get(),db.doc(`historicosRedesVinculadas/${historicoId}`).get()]);
+      if (!link.exists || link.get("clienteReceptorId") !== clienteId || link.get("campanaReceptoraId") !== campanaId || link.get("estado") !== "retirada") return fail("Histórico no autorizado.",403);
+      if (!archive.exists || archive.get("estado") !== "listo") return fail("No existe una copia histórica disponible para esta vinculación.",404);
+      const fragments = await archive.ref.collection("fragmentos").orderBy("__name__").get();
+      if (fragments.size !== Number(archive.get("cantidadFragmentos") || 0)) return fail("El histórico está incompleto.",503);
+      const registros = fragments.docs.flatMap(d => d.get("registros") || []);
+      return NextResponse.json({id:historicoId,fechaRetiro:link.get("retiradaEn")?.toDate?.()?.toISOString?.(),campanaOrigenId:archive.get("campanaOrigenId"),registros},{headers:{"Cache-Control":"no-store","Content-Disposition":`attachment; filename="historico-red-${historicoId}.json"`}});
+    }
     const links = await db.collection("vinculacionesCampana").where("clienteReceptorId", "==", clienteId).limit(150).get();
     const selected = links.docs.filter(d => d.get("campanaReceptoraId") === campanaId && ["activa", "retirada"].includes(String(d.get("estado"))));
     const rows = await Promise.all(selected.map(async link => {
@@ -39,7 +50,7 @@ export async function GET(request: NextRequest) {
           id: link.id, nombre: String(link.get("nombreHistorico") || invite.get("destinatarioNombre") || "Red desvinculada"),
           categoria: category, estado: "retirada", accesoCompartido: false, red: [],
           retiradaEn: link.get("retiradaEn")?.toDate?.()?.toISOString?.(),
-          aviso: "El propietario se retiró. Sin acceso a su estructura ni aporte electoral."
+          aviso: "Red retirada: aporte activo cero. Consulta y descarga la copia histórica congelada, si está disponible."
         };
       }
       if (!owner.exists || owner.get("estado") === "inactivo" || owner.get("clienteId") !== ownerClientId ||
