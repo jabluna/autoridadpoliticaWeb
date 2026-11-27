@@ -535,9 +535,9 @@ export default function ClienteDashboardPage() {
         </header>
 
         <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4 xl:px-6">
-          <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm sm:px-5">
-            <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Centro de control</p><div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2"><h2 className="text-lg font-extrabold text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2>{(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="max-w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm"><span className="mr-2 text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Lema de campaña</span><span className="text-sm font-extrabold italic text-blue-900">“{lema}”</span></div>:null;})()}</div><p className="mt-1 text-xs text-slate-500">Resumen de campaña y evolución de la red.</p></div>
-            <button onClick={() => router.push("/mired")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-800">Ver mi grupo de trabajo →</button>
+          <section className="rounded-2xl border border-emerald-100 bg-white px-3 py-2.5 shadow-sm sm:px-5 sm:py-3">
+            <div className="flex items-center justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Centro de control</p><h2 className="mt-0.5 break-words text-base font-extrabold leading-tight text-slate-900 sm:text-xl">Bienvenido, {nombre}</h2></div><button onClick={() => router.push("/mired")} className="shrink-0 whitespace-nowrap rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-800">Ver red →</button></div>
+            {(()=>{const activa=campanas.find(c=>c.estado==="activa");const lema=String((activa||campanas[0])?.lema||"").trim();return lema?<div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5"><span className="mr-2 text-[10px] font-bold uppercase text-blue-600">Lema de campaña</span><span className="break-words text-xs font-extrabold italic text-blue-900 sm:text-sm">“{lema}”</span></div>:null;})()}
           </section>
 
           {(() => {
@@ -550,7 +550,7 @@ export default function ClienteDashboardPage() {
               <>
                 <section className="mt-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Resumen de multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, personas registradas en reuniones y votos.</p></div><button onClick={() => router.push("/mired")} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver mi grupo de trabajo →</button></div>
+              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="text-base font-bold text-slate-900">Resumen de multired</h3><p className="mt-1 text-xs text-slate-500">Indicadores actuales de líderes, personas registradas en reuniones y votos.</p></div><button onClick={() => router.push("/mired")} className="shrink-0 whitespace-nowrap rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">Ver red →</button></div>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <div className="rounded-xl bg-blue-50 p-3"><strong className="block text-xl font-black text-blue-800">{redMetricas.lideres.toLocaleString("es-CO")}</strong><span className="text-[11px] text-blue-700">Líderes</span></div>
                 <div className="rounded-xl bg-cyan-50 p-3"><strong className="block text-xl font-black text-cyan-800">{redMetricas.integrantes.toLocaleString("es-CO")}</strong><span className="text-[11px] text-cyan-700">Personas registradas en reuniones</span></div>
