@@ -62,6 +62,8 @@ export default function ClienteDashboardPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
+  const [proyecciones, setProyecciones] = useState<Array<{id:string; nombre:string; fecha:string; estimado:number; actual:number}>>([]);
+  const [campanaProyeccion, setCampanaProyeccion] = useState("");
   const [campanas, setCampanas] = useState<any[]>([]);
   const [lideresResumen, setLideresResumen] = useState<Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }>>([]);
   const [fichaUrl, setFichaUrl] = useState("");
@@ -158,6 +160,7 @@ export default function ClienteDashboardPage() {
         let matrizDirectos = 0;
         let matrizProfundidad = 0;
         const perfiles: Array<{ id: string; nombre: string; ciudad: string; fotoUrl: string; votos: number; estimado: number; matrizDirectos: number; matrizProfundidad: number }> = [];
+        const proyeccionesCampana: Array<{id:string; nombre:string; fecha:string; estimado:number; actual:number}> = [];
         for (const camp of campRows) {
           try {
             const base = ["clientes", userData.clienteId, "campanas", camp.id] as const;
@@ -212,6 +215,7 @@ export default function ClienteDashboardPage() {
             const counts = await Promise.all(activeNodes.map(n => getCountFromServer(collection(db, ...base, "nodos", n.id, "personas"))));
             registrados += counts.reduce((sum, count) => sum + count.data().count, 0);
             integrantes += registrados;
+            proyeccionesCampana.push({id:camp.id,nombre:camp.nombreCampana || "Campaña",fecha:camp.fechaEleccion || "",estimado:activeNodes.reduce((sum,n)=>sum+Number(n.data().estimacionVotos || 0),0),actual:activeNodes.reduce((sum,n)=>sum+(n.data().multinodo===false?Math.max(1,Number(n.data().estimacionVotos)||1):1),0)});
             // Estimación propia de cada líder: evita sumar subárboles varias veces.
             votosEstimados += activeNodes.reduce((sum, n) => sum + Number(n.data().estimacionVotos || 0), 0);
             // Misma regla que Mi Red: un líder con multinodo aporta 1;
@@ -226,6 +230,8 @@ export default function ClienteDashboardPage() {
           }
         }
 
+        setProyecciones(proyeccionesCampana);
+        setCampanaProyeccion(proyeccionesCampana.find(p=>campRows.find(c=>c.id===p.id)?.estado==="activa")?.id || proyeccionesCampana[0]?.id || "");
         setRedMetricas({ integrantes, lideres, votosEstimados, votosRed, matrizDirectos, matrizProfundidad });
         setLideresResumen(perfiles.sort((a,b) => a.nombre.localeCompare(b.nombre, "es")));
         setLiderSeleccionado(current => current && perfiles.some(p => p.id === current) ? current : (perfiles[0]?.id || ""));
@@ -542,6 +548,29 @@ export default function ClienteDashboardPage() {
               {(() => {const gap=redMetricas.votosEstimados-redMetricas.votosRed;const pct=redMetricas.votosEstimados>0?redMetricas.votosRed/redMetricas.votosEstimados*100:0;return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">Cumplimiento de la multired</span><strong className="text-blue-700">{pct.toFixed(1)}%</strong></div><div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{width:`${Math.max(0,Math.min(100,pct))}%`}} /></div><p className="mt-2 text-[11px] text-slate-500">Diferencia entre estimado y votos: <strong className="text-slate-800">{gap.toLocaleString("es-CO")}</strong></p></div>})()}
             </div>
 
+                </section>
+
+                <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-slate-900">Ruta de proyección hacia las elecciones</h3><p className="mt-1 text-xs text-slate-500">Avance actual frente al estimado manual y trayectoria objetivo hasta la fecha electoral.</p></div><select aria-label="Campaña de proyección" value={campanaProyeccion} onChange={e=>setCampanaProyeccion(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">{proyecciones.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></div>
+                  {(()=>{
+                    const p=proyecciones.find(v=>v.id===campanaProyeccion);
+                    if(!p || !p.fecha || !Number.isFinite(p.estimado) || p.estimado<=0) return <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Configura la fecha de elección y el estimado de los líderes para visualizar la ruta.</p>;
+                    const end=new Date(p.fecha+"T00:00:00");const now=new Date();now.setHours(0,0,0,0);
+                    if(!Number.isFinite(end.getTime()))return <p className="p-4 text-sm">Fecha de elección inválida.</p>;
+                    const days=Math.max(0,Math.round((end.getTime()-now.getTime())/86400000));
+                    const colors=["#dc2626","#f97316","#eab308","#2563eb","#16a34a"];
+                    const pct=p.actual/p.estimado*100;const color=colors[Math.min(4,Math.max(0,Math.ceil(pct/20)-1))];
+                    const max=Math.max(p.estimado,p.actual);const y=(v:number)=>280-v/max*240;const fmt=(v:number)=>Math.round(v).toLocaleString("es-CO");
+                    const dateFmt=(d:Date)=>d.toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"numeric"});
+                    return <><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Proyectados actuales",fmt(p.actual)],["Estimado total",fmt(p.estimado)],["Cumplimiento",pct.toFixed(1)+"%"],["Días para elecciones",String(days)]].map(([label,value])=><div key={label} className="rounded-xl bg-slate-50 p-3"><strong className="block text-lg font-black" style={{color:label==="Cumplimiento"?color:undefined}}>{value}</strong><span className="text-xs text-slate-500">{label}</span></div>)}</div>
+                    <div className="mt-4 overflow-x-auto"><svg role="img" aria-label="Gráfica de trayectoria objetivo electoral" viewBox="0 0 1000 345" className="h-auto w-full min-w-[560px]">
+                    {colors.map((fill,i)=><g key={fill}><rect x="105" y={y(p.estimado*(i+1)/5)} width="850" height={y(p.estimado*i/5)-y(p.estimado*(i+1)/5)} fill={fill} opacity=".09"/><line x1="105" x2="955" y1={y(p.estimado*(i+1)/5)} y2={y(p.estimado*(i+1)/5)} stroke={fill} strokeDasharray="4 4" opacity=".6"/><text x="95" y={y(p.estimado*(i+1)/5)+4} textAnchor="end" fontSize="11" fill="#475569">{fmt(p.estimado*(i+1)/5)}</text><text x="945" y={y(p.estimado*(i+1)/5)+14} textAnchor="end" fontSize="11" fontWeight="bold" fill={fill}>{(i+1)*20}%</text></g>)}
+                    <line x1="105" x2="105" y1="25" y2="280" stroke="#94a3b8"/><line x1="105" x2="955" y1="280" y2="280" stroke="#94a3b8"/><text x="95" y="284" textAnchor="end" fontSize="11" fill="#475569">0</text><text transform="translate(20 160) rotate(-90)" textAnchor="middle" fontSize="12" fill="#475569">Votos proyectados</text>
+                    {days>0 && p.actual<p.estimado && <><path d={`M105 ${y(p.actual)} L955 ${y(p.estimado)} L955 280 L105 280 Z`} fill={color} opacity=".12"/><line x1="105" y1={y(p.actual)} x2="955" y2={y(p.estimado)} stroke={color} strokeWidth="3" strokeDasharray="8 5"/></>}
+                    <circle cx="105" cy={y(p.actual)} r="6" fill={color} stroke="white" strokeWidth="2"/><text x="117" y={y(p.actual)-10} fontSize="12" fontWeight="bold" fill={color}>{fmt(p.actual)} actuales</text><circle cx="955" cy={y(p.estimado)} r="5" fill="#16a34a"/>
+                    {[0,1,2,3,4].map(i=>{const d=new Date(now.getTime()+days*86400000*i/4);return <text key={i} x={105+850*i/4} y="303" textAnchor={i===0?"start":i===4?"end":"middle"} fontSize="11" fill="#475569">{i===4?dateFmt(end):days>0?dateFmt(d):i===0?dateFmt(now):""}</text>})}<text x="530" y="330" textAnchor="middle" fontSize="12" fill="#475569">Fecha de elecciones: {dateFmt(end)}</text></svg></div>
+                    <div className="flex flex-wrap gap-3 text-xs text-slate-600">{colors.map((v,i)=><span key={v} className="flex items-center gap-1"><i className="h-3 w-3 rounded" style={{backgroundColor:v}}/>{i*20}–{(i+1)*20}%</span>)}</div><p className="mt-3 text-xs text-slate-500">La línea discontinua es una trayectoria objetivo, no un pronóstico ni un histórico de votos. {days>0?"":"La fecha electoral es hoy o ya pasó."}</p></>;
+                  })()}
                 </section>
 
                 <section className="mt-3 grid gap-3 lg:grid-cols-2">
