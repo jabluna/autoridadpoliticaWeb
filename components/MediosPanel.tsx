@@ -82,7 +82,9 @@ export default function MediosPanel({mode}:{mode:Mode}){
       if(response.ok){const data=await response.json();for(const i of data.invitaciones||[]){
         if(i.estado==="aceptada"&&i.clienteId&&i.campanaId)own.push({clienteId:i.clienteId,campanaId:i.campanaId,nombre:i.campanaNombre||"Campaña invitante",invitada:true});
       }}
-      setScopes(own);setScopeKey(v=>v|| (own[0]?`${own[0].clienteId}:${own[0].campanaId}`:""));
+      const saved=u.rol==="cliente_admin"?localStorage.getItem("ap:campana:"+u.clienteId):null;
+      const selected=own.find(s=>!s.invitada&&s.clienteId===u.clienteId&&s.campanaId===saved)||own[0];
+      setScopes(own);setScopeKey(v=>v|| (selected?`${selected.clienteId}:${selected.campanaId}`:""));
     }catch(e){setError(e instanceof Error?e.message:"No fue posible cargar campañas");}
   }),[router]);
   const refresh=useCallback(async()=>{
