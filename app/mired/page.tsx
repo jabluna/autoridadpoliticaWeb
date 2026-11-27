@@ -163,7 +163,7 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
   }, [clienteId, campanaId, reunionesRef]);
   const reunionActiva = (owner: string | null) => reuniones.find(r => r.responsableId === owner && r.estado === "activa");
   const resumenReuniones = (owner: string | null) => {
-    const list = reuniones.filter(r => r.responsableId === owner);
+    const list = reuniones.filter(r => r.responsableId === owner && Number(r.cantidad || 0) > 0);
     return { cantidad: list.length, personas: list.reduce((total, r) => total + Number(r.cantidad || 0), 0) };
   };
   const finalizarReunion = async (owner: string | null) => {
@@ -273,6 +273,13 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
       active.forEach(n => { const value = aggregate.get(n.id)!; batch.update(doc(nodesRef(), n.id), { votosRealesSubarbol: value.real, votosEstimadosSubarbol: value.estimate }); });
       batch.set(metricsRef(), { registros: root.real, votosEstimados: root.estimate, reconciliado: true, reconciliadoEn: serverTimestamp() }, { merge: true });
       await batch.commit();
+      const reunionesGuardadas = await getDocs(reunionesRef());
+      for (const r of reunionesGuardadas.docs) {
+        const data = r.data() as Reunion;
+        const cantidad = (await getCountFromServer(query(peopleRef(data.responsableId ?? null), where("reunionId", "==", r.id)))).data().count;
+        if (cantidad === 0) await deleteDoc(r.ref);
+        else if (cantidad !== Number(data.cantidad || 0)) await updateDoc(r.ref, { cantidad });
+      }
       notify(`Recuento completado: ${root.real.toLocaleString("es-CO")} personas registradas. La meta electoral de la campaña no se modificó.`, true);
     } catch (e) { notify(e instanceof Error ? e.message : "No fue posible recalcular."); }
     finally { setRebuilding(false); setBusy(false); }
@@ -720,7 +727,23 @@ export default function MiRedPage({ leaderMode = false }: { leaderMode?: boolean
     if (leaderMode) return notify("La eliminación de registros está restringida para líderes.");
     if (!window.confirm(`¿Eliminar el registro comunitario de ${fullName(p)}?`)) return;
     setBusy(true);
-    try { const batch = writeBatch(db); batch.delete(doc(peopleRef(peopleOwner), p.id)); addCounter(batch, await ancestors(peopleOwner), "votosRealesSubarbol", -1); await batch.commit(); await loadPeople(); notify("Registro comunitario eliminado.", true); }
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(peopleRef(peopleOwner), p.id));
+      addCounter(batch, await ancestors(peopleOwner), "votosRealesSubarbol", -1);
+      if (p.reunionId) {
+        const reunionDoc = doc(reunionesRef(), p.reunionId);
+        const reunionSnap = await getDoc(reunionDoc);
+        if (reunionSnap.exists()) {
+          const count = (await getCountFromServer(query(peopleRef(peopleOwner), where("reunionId", "==", p.reunionId)))).data().count;
+          if (count <= 1) batch.delete(reunionDoc);
+          else batch.update(reunionDoc, { cantidad: count - 1 });
+        }
+      }
+      await batch.commit();
+      setPeopleMatches(prev => prev ? prev.filter(item => item.id !== p.id) : prev);
+      await loadPeople(); notify("Registro comunitario eliminado.", true);
+    }
     catch (e) { notify(e instanceof Error ? e.message : "No fue posible eliminar."); }
     finally { setBusy(false); }
   };
