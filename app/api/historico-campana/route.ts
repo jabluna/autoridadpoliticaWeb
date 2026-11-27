@@ -27,9 +27,11 @@ export async function POST(req:NextRequest){
  const clientRef=db().collection("clientes").doc(id);const target=clientRef.collection("historicoCampana").doc(semana);
  const camps=await clientRef.collection("campanas").get();
  let lideres=0,integrantes=0,estimado=0,aporte=0,meta=0,actividad=0,actividadConFecha=0;
+ const porCampana: Array<{id:string;estimadoManual:number;aporteCalculado:number}>=[];
  const start=new Date(today);start.setUTCDate(start.getUTCDate()-7);
  for(const camp of camps.docs){
   const data=camp.data();if(data.estado==="activa")meta+=Math.max(0,Number(data.metaVotos)||0);
+  const antesEstimado=estimado, antesAporte=aporte;
   const base=camp.ref;const nodes=await base.collection("nodos").get();
   const active=nodes.docs.filter(n=>n.get("estado")!=="inactivo");lideres+=active.length;
   for(const node of active){
@@ -39,10 +41,11 @@ export async function POST(req:NextRequest){
    if(raw){const date=raw.toDate?.()??new Date(raw);if(!Number.isNaN(date.getTime())){actividadConFecha++;if(date>=start&&date<=today)actividad++;}}
    const people=await node.ref.collection("personas").count().get();integrantes+=people.data().count;
   }
+  porCampana.push({id:camp.id,estimadoManual:estimado-antesEstimado,aporteCalculado:aporte-antesAporte});
   const root=await base.collection("personasRaiz").count().get();integrantes+=root.data().count;
  }
  // El documento de la semana actual se actualiza; las semanas cerradas permanecen intactas.
- await target.set({semana,fechaCorte:today.toISOString(),lideres,integrantes,estimadoManual:estimado,aporteCalculado:aporte,metaElectoral:meta,lideresConActividad:actividad,lideresConFechaActividad:actividadConFecha,registradoEn:FieldValue.serverTimestamp(),version:1});
+ await target.set({semana,fechaCorte:today.toISOString(),lideres,integrantes,estimadoManual:estimado,aporteCalculado:aporte,metaElectoral:meta,lideresConActividad:actividad,lideresConFechaActividad:actividadConFecha,registradoEn:FieldValue.serverTimestamp(),porCampana,version:2});
  return NextResponse.json({ok:true,semana});
  }catch(e){return error(e instanceof Error?e.message:"No se pudo guardar el corte");}
 }
