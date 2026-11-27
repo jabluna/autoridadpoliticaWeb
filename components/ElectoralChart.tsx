@@ -29,7 +29,7 @@ export default function ElectoralChart({points,first,last,goal,onSelect}:Props){
  series:[
  {name:"Proyectados acumulados",type:"line",data,symbol:"circle",symbolSize:6,lineStyle:{width:3},itemStyle:{borderColor:"#fff",borderWidth:1.5},areaStyle:{opacity:.22},emphasis:{focus:"series",scale:1.5}},
  {name:"Estimados por líderes",type:"line",data:points.map(p=>[p.t,p.meta]),symbol:"none",lineStyle:{type:"dashed",width:2,color:"#64748b"}},
- {name:"Meta electoral",type:"line",data:[[first,goal],[Math.max(last,first+86400000),goal]],symbol:"none",lineStyle:{type:"dashed",width:3,color:"#15803d"},endLabel:{show:true,formatter:()=> "Meta electoral: "+fmt(goal),color:"#15803d",fontWeight:"bold",fontSize:12,position:"insideEndTop",distance:8,backgroundColor:"#f0fdf4",padding:[4,8],borderRadius:4},tooltip:{show:false}}
+ {name:"Meta electoral",type:"line",data:[[first,goal],[Math.max(last,first+86400000),goal]],symbol:"none",lineStyle:{type:"dashed",width:3,color:"#15803d"},endLabel:{show:true,formatter:()=> "Meta electoral: "+fmt(goal),color:"#15803d",fontWeight:"bold",fontSize:12,position:"insideTop",offset:[-80,-8],distance:8,backgroundColor:"#f0fdf4",padding:[4,8],borderRadius:4},tooltip:{show:false}}
  ]};
  instance.setOption(option,{notMerge:true});
  const click=(event:unknown)=>{const e=event as {value?:number[]};if(e.value&&points.some(p=>p.t===e.value?.[0]))select.current(e.value[0]);};
